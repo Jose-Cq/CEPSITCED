@@ -1,18 +1,41 @@
 import React from 'react';
 
+const getInitials = (value = '') => {
+  const safeValue = String(value || 'Especialista').trim();
+  return safeValue
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(word => word[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+};
+
 const PsychologistCard = ({ psychologist, onOpenDetails }) => {
+  const safeName = psychologist?.nombre || psychologist?.nombres_apellidos || 'Especialista';
+  const safeSpecialty = psychologist?.especialidad || 'Especialista clínico';
+  const safeDescription = psychologist?.descripcion || 'Especialista en psicología clínica con enfoque integral.';
+  const safeColegiatura = psychologist?.colegiatura || 'C.Ps.P. Disponible';
+  const safeFoto = psychologist?.foto;
+
   return (
     <div
       className="group relative bg-white border border-gray-100 rounded-3xl overflow-hidden shadow-sm hover:shadow-2xl transition-all duration-300 flex flex-col h-full cursor-pointer"
       onClick={onOpenDetails}
     >
       {/* Imagen del perfil */}
-      <div className="relative h-72 w-full overflow-hidden bg-gray-100">
-        <img
-          src={psychologist.foto}
-          alt={psychologist.nombre}
-          className="h-full w-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
-        />
+      <div className="relative h-72 w-full overflow-hidden bg-slate-50 flex items-center justify-center">
+        {safeFoto ? (
+          <img
+            src={safeFoto}
+            alt={safeName}
+            className="h-full w-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
+          />
+        ) : (
+          <div className="w-24 h-24 rounded-full bg-blue-100 text-[#003178] flex items-center justify-center text-3xl font-bold uppercase shadow-sm">
+            {getInitials(safeName)}
+          </div>
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-gray-950/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-6">
           <span className="text-white text-xs font-semibold tracking-wider uppercase bg-[#6cbdfe]/80 backdrop-blur-sm px-3.5 py-1.5 rounded-full">
             Ver Trayectoria
@@ -24,16 +47,16 @@ const PsychologistCard = ({ psychologist, onOpenDetails }) => {
       <div className="p-6 flex-1 flex flex-col justify-between">
         <div>
           <span className="text-xs font-bold text-[#003178]/80 uppercase tracking-widest block mb-2">
-            {psychologist.especialidad.split(' - ')[0] || 'Especialista'}
+            {String(safeSpecialty).split(' - ')[0].split(' / ')[0]}
           </span>
           <h3 className="text-xl font-bold text-gray-900 group-hover:text-[#003178] transition-colors mb-3 leading-snug">
-            {psychologist.nombre}
+            {safeName}
           </h3>
           <p className="text-xs text-gray-400 font-semibold mb-3">
-            Colegiatura: {psychologist.colegiatura}
+            Colegiatura: {safeColegiatura}
           </p>
           <p className="text-gray-500 text-sm line-clamp-3 leading-relaxed mb-6">
-            {psychologist.descripcion}
+            {safeDescription}
           </p>
         </div>
 

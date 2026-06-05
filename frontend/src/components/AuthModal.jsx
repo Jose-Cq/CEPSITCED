@@ -54,7 +54,7 @@ const AuthModal = ({ isOpen, onClose, onOpenRegister, onLoginSuccess }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 animate-in fade-in duration-150">
       {/* Overlay con desenfoque */}
       <div
         className="absolute inset-0 bg-[#001d32]/85 backdrop-blur-md"
@@ -62,7 +62,7 @@ const AuthModal = ({ isOpen, onClose, onOpenRegister, onLoginSuccess }) => {
       ></div>
 
       {/* Contenedor Principal Split Screen */}
-      <div className="relative w-full max-w-6xl h-[700px] grid grid-cols-1 lg:grid-cols-2 bg-white rounded-[2.5rem] shadow-2xl overflow-hidden zoom-in animate-in duration-300">
+      <div className="relative w-full max-w-6xl h-[700px] grid grid-cols-1 lg:grid-cols-2 bg-white rounded-[2.5rem] shadow-2xl overflow-hidden">
 
         {/* LADO IZQUIERDO: BRANDING (AZUL) */}
         <div className="hidden lg:flex flex-col justify-between p-12 text-white relative bg-[#003178]">

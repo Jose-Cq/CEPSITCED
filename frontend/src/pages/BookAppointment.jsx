@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, Fragment, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { usePacienteActual } from '../hooks/usePacienteActual';
@@ -151,14 +151,19 @@ const BookAppointment = () => {
 
   const [fechasHabilitadas, setFechasHabilitadas] = useState(new Set());
   const [fechaSeleccionada, setFechaSeleccionada] = useState(null); // Date object or null
-  const [calendarMonth, setCalendarMonth] = useState(new Date()); // Date object representing currently viewed month
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  }); // Date object representing currently viewed month (safely starts at 1st day to avoid rollovers)
 
   const [slotsDisponibles, setSlotsDisponibles] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [slotSeleccionado, setSlotSeleccionado] = useState(null);
 
-  const [modalidad, setModalidad] = useState('presencial');
+  const [modalidad, setModalidad] = useState('Presencial');
   const [comentario, setComentario] = useState('');
+  const [showCommentsModal, setShowCommentsModal] = useState(false);
+  const [tempComentario, setTempComentario] = useState('');
   const [metodoPago, setMetodoPago] = useState('clinica'); // 'clinica' o 'tarjeta'
 
   const [showCulqiModal, setShowCulqiModal] = useState(false);
@@ -254,7 +259,7 @@ const BookAppointment = () => {
   };
 
   // Calcular la fecha disponible más próxima para un especialista
-  const calcularFechaMasProxima = async (psicologoId) => {
+  const calcularFechaMasProxima = async (psicologoId, currentModalidad) => {
     try {
       const hoy = new Date();
       const todayStr = hoy.toISOString().split('T')[0];
@@ -262,9 +267,10 @@ const BookAppointment = () => {
 
       // Obtener horarios de la psicóloga
       const { data: horarios, error: errH } = await supabase
-        .from('horarios_psicologas')
+        .from('horarios_empleados')
         .select('*')
-        .eq('psicologo_id', psicologoId)
+        .eq('empleado_id', psicologoId)
+        .eq('modalidad', currentModalidad)
         .gte('fecha', todayStr)
         .order('fecha', { ascending: true })
         .order('hora_inicio', { ascending: true });
@@ -299,14 +305,14 @@ const BookAppointment = () => {
   };
 
   // Cargar psicólogas del servicio y precalcular sus fechas más próximas
-  const cargarPsicologas = async (servId) => {
+  const cargarPsicologas = async (servId, currentModalidad) => {
     setLoadingPsicologas(true);
     const res = await obtenerPsicologasPorServicio(servId);
     if (res.success) {
       setPsicologas(res.data);
       const proximas = {};
       for (const p of res.data) {
-        const fecha = await calcularFechaMasProxima(p.id);
+        const fecha = await calcularFechaMasProxima(p.id, currentModalidad);
         proximas[p.id] = fecha;
       }
       setFechasProximas(proximas);
@@ -314,17 +320,30 @@ const BookAppointment = () => {
     setLoadingPsicologas(false);
   };
 
+  // Recalcular fechas más próximas al cambiar de modalidad
+  const actualizarProximasFechas = async (currentModalidad) => {
+    setLoadingPsicologas(true);
+    const proximas = {};
+    for (const p of psicologas) {
+      const fecha = await calcularFechaMasProxima(p.id, currentModalidad);
+      proximas[p.id] = fecha;
+    }
+    setFechasProximas(proximas);
+    setLoadingPsicologas(false);
+  };
+
   // Cargar las fechas habilitadas (con al menos 1 slot libre) para el calendario
-  const cargarFechasHabilitadas = async (psicologoId) => {
+  const cargarFechasHabilitadas = async (psicologoId, currentModalidad) => {
     try {
       const hoy = new Date();
       const todayStr = hoy.toISOString().split('T')[0];
       const duracion = servicioSeleccionado?.duracion_minutos || servicioSeleccionado?.duracion || 30;
 
       const { data: horarios } = await supabase
-        .from('horarios_psicologas')
+        .from('horarios_empleados')
         .select('*')
-        .eq('psicologo_id', psicologoId)
+        .eq('empleado_id', psicologoId)
+        .eq('modalidad', currentModalidad)
         .gte('fecha', todayStr);
 
       const { data: citas } = await supabase
@@ -352,13 +371,14 @@ const BookAppointment = () => {
   };
 
   // Cargar slots libres para un día específico
-  const cargarSlotsDelDia = async (psicologoId, fechaStr) => {
+  const cargarSlotsDelDia = async (psicologoId, fechaStr, currentModalidad) => {
     setLoadingSlots(true);
     try {
       const { data: horarios } = await supabase
-        .from('horarios_psicologas')
+        .from('horarios_empleados')
         .select('*')
-        .eq('psicologo_id', psicologoId)
+        .eq('empleado_id', psicologoId)
+        .eq('modalidad', currentModalidad)
         .eq('fecha', fechaStr)
         .order('hora_inicio', { ascending: true });
 
@@ -402,27 +422,26 @@ const BookAppointment = () => {
     }
     if (step === 2) return servicioSeleccionado !== null;
     if (step === 3) return psicologaSeleccionada !== null;
-    if (step === 4) return fechaSeleccionada !== null;
-    if (step === 5) return slotSeleccionado !== null;
+    if (step === 4) return fechaSeleccionada !== null && slotSeleccionado !== null;
     return true;
   };
 
   const nextStep = () => {
     if (puedesAvanzar()) {
       if (step === 2) {
-        cargarPsicologas(servicioSeleccionado.id);
+        cargarPsicologas(servicioSeleccionado.id, modalidad);
       }
       if (step === 3) {
-        cargarFechasHabilitadas(psicologaSeleccionada.id);
+        cargarFechasHabilitadas(psicologaSeleccionada.id, modalidad);
         setFechaSeleccionada(null);
         setSlotSeleccionado(null);
       }
       if (step === 4) {
-        const dateStr = formatDateStr(fechaSeleccionada.getFullYear(), fechaSeleccionada.getMonth(), fechaSeleccionada.getDate());
-        cargarSlotsDelDia(psicologaSeleccionada.id, dateStr);
-        setSlotSeleccionado(null);
+        setTempComentario(comentario);
+        setShowCommentsModal(true);
+        return;
       }
-      setStep(prev => Math.min(prev + 1, 6));
+      setStep(prev => Math.min(prev + 1, 5));
     }
   };
 
@@ -522,7 +541,8 @@ const BookAppointment = () => {
         metodo_pago: dbMetodoPago,
         monto: priceVal,
         comentario_paciente: comentario,
-        paquete_id: dbPaqueteId
+        paquete_id: dbPaqueteId,
+        modalidad: modalidad
       };
 
       const res = await crearCita(cita);
@@ -558,17 +578,22 @@ const BookAppointment = () => {
   };
 
   // Funciones de control de fecha
-  const año = calendarMonth.getFullYear();
-  const mes = calendarMonth.getMonth();
-  const diasEnMes = new Date(año, mes + 1, 0).getDate();
-  const primerDia = new Date(año, mes, 1).getDay();
+  // Funciones de control de fecha (optimizadas con useMemo para prevenir lentitud y renders extras)
+  const { año, mes, dias } = useMemo(() => {
+    const y = calendarMonth.getFullYear();
+    const m = calendarMonth.getMonth();
+    const diasEnMes = new Date(y, m + 1, 0).getDate();
+    const primerDia = new Date(y, m, 1).getDay();
 
-  const dias = [];
-  for (let i = 0; i < primerDia; i++) dias.push(null);
-  for (let d = 1; d <= diasEnMes; d++) dias.push(d);
+    const d = [];
+    for (let i = 0; i < primerDia; i++) d.push(null);
+    for (let dNum = 1; dNum <= diasEnMes; dNum++) d.push(dNum);
+
+    return { año: y, mes: m, dias: d };
+  }, [calendarMonth]);
 
   const cambiarMes = (incremento) => {
-    const nueva = new Date(calendarMonth);
+    const nueva = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1); // safe from end-of-month rollovers
     nueva.setMonth(nueva.getMonth() + incremento);
     setCalendarMonth(nueva);
   };
@@ -597,7 +622,12 @@ const BookAppointment = () => {
                 key={`day-${d}`}
                 type="button"
                 disabled={!isEnabled}
-                onClick={() => setFechaSeleccionada(new Date(año, mes, d))}
+                onClick={() => {
+                  const newDate = new Date(año, mes, d);
+                  setFechaSeleccionada(newDate);
+                  cargarSlotsDelDia(psicologaSeleccionada.id, dateStr, modalidad);
+                  setSlotSeleccionado(null);
+                }}
                 className={`py-2.5 rounded-xl font-bold transition-all ${isSelected
                     ? 'bg-[#003178] text-white shadow-md transform scale-105'
                     : isEnabled
@@ -619,9 +649,8 @@ const BookAppointment = () => {
     { number: 1, label: 'Paciente' },
     { number: 2, label: 'Servicio' },
     { number: 3, label: 'Especialista' },
-    { number: 4, label: 'Fecha' },
-    { number: 5, label: 'Horario' },
-    { number: 6, label: 'Pago' }
+    { number: 4, label: 'Fecha y Horario' },
+    { number: 5, label: 'Pago' }
   ];
 
   const renderStepIndicator = () => {
@@ -948,49 +977,53 @@ const BookAppointment = () => {
     return (
       <div className="space-y-6">
         <h4 className="font-bold text-sm text-gray-500 uppercase tracking-widest border-b pb-2">Especialistas para este Servicio</h4>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {psicologas.map(p => {
-            const isSelected = psicologaSeleccionada?.id === p.id;
-            const foto = getPsicoFoto(p.id) || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200';
-            const fechaProx = fechasProximas[p.id];
+        {psicologas.length === 0 ? (
+          <p className="text-sm text-gray-500 bg-gray-50 border rounded-xl p-4 text-center">No hay especialistas disponibles para este servicio.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {psicologas.map(p => {
+              const isSelected = psicologaSeleccionada?.id === p.id;
+              const foto = getPsicoFoto(p.id) || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200';
+              const fechaProx = fechasProximas[p.id];
 
-            return (
-              <button
-                key={p.id}
-                type="button"
-                className={`flex flex-col bg-white rounded-2xl border overflow-hidden text-left transition-all cursor-pointer ${isSelected
-                    ? 'border-[#003178] ring-2 ring-blue-50/50 shadow-md'
-                    : 'border-gray-200 hover:bg-gray-50 hover:shadow-sm'
-                  }`}
-                onClick={() => setPsicologaSeleccionada(p)}
-              >
-                <div className="h-44 w-full overflow-hidden bg-gray-100 relative">
-                  <img src={foto} alt={p.nombres_apellidos} className="w-full h-full object-cover object-top" />
-                  {isSelected && (
-                    <div className="absolute top-3 right-3 bg-[#003178] text-white rounded-full p-1 flex items-center justify-center">
-                      <span className="material-symbols-outlined text-[16px]">check</span>
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={`flex flex-col bg-white rounded-2xl border overflow-hidden text-left transition-all cursor-pointer ${isSelected
+                      ? 'border-[#003178] ring-2 ring-blue-50/50 shadow-md'
+                      : 'border-gray-200 hover:bg-gray-50 hover:shadow-sm'
+                    }`}
+                  onClick={() => setPsicologaSeleccionada(p)}
+                >
+                  <div className="h-44 w-full overflow-hidden bg-gray-100 relative">
+                    <img src={foto} alt={p.nombres_apellidos} className="w-full h-full object-cover object-top" />
+                    {isSelected && (
+                      <div className="absolute top-3 right-3 bg-[#003178] text-white rounded-full p-1 flex items-center justify-center">
+                        <span className="material-symbols-outlined text-[16px]">check</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4 flex-1 flex flex-col justify-between">
+                    <div>
+                      <h5 className="font-bold text-gray-900 text-sm leading-tight">{p.nombres_apellidos}</h5>
+                      <p className="text-xs text-gray-400 mt-1">{p.correo || 'Especialista CEPSITCED'}</p>
                     </div>
-                  )}
-                </div>
-                <div className="p-4 flex-1 flex flex-col justify-between">
-                  <div>
-                    <h5 className="font-bold text-gray-900 text-sm leading-tight">{p.nombres_apellidos}</h5>
-                    <p className="text-xs text-gray-400 mt-1">{p.correo || 'Especialista CEPSITCED'}</p>
-                  </div>
 
-                  <div className="mt-4 pt-3 border-t border-gray-100 flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[#003178] text-[16px]">calendar_today</span>
-                    <span className="text-[11px] font-bold text-[#003178]">
-                      {fechaProx
-                        ? `Disponible desde: ${new Date(fechaProx + 'T00:00:00').toLocaleDateString('es-PE')}`
-                        : 'Sin disponibilidad próxima'}
-                    </span>
+                    <div className="mt-4 pt-3 border-t border-gray-100 flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[#003178] text-[16px]">calendar_today</span>
+                      <span className="text-[11px] font-bold text-[#003178]">
+                        {fechaProx
+                          ? `Disponible desde: ${new Date(fechaProx + 'T00:00:00').toLocaleDateString('es-PE')}`
+                          : 'Sin disponibilidad en esta modalidad'}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   };
@@ -998,107 +1031,94 @@ const BookAppointment = () => {
   const renderStep4 = () => {
     return (
       <div className="space-y-6">
-        <h4 className="font-bold text-sm text-gray-500 uppercase tracking-widest border-b pb-2">Seleccionar Fecha de Cita</h4>
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 max-w-xl mx-auto shadow-sm">
-          <div className="flex justify-between items-center mb-6">
-            <button
-              type="button"
-              onClick={() => cambiarMes(-1)}
-              className="p-2 hover:bg-gray-200 rounded-full text-gray-600 transition-colors cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[20px]">chevron_left</span>
-            </button>
-            <span className="font-bold text-sm text-slate-800 uppercase tracking-wider">
-              {calendarMonth.toLocaleDateString('es-PE', { month: 'long', year: 'numeric' })}
-            </span>
-            <button
-              type="button"
-              onClick={() => cambiarMes(1)}
-              className="p-2 hover:bg-gray-200 rounded-full text-gray-600 transition-colors cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[20px]">chevron_right</span>
-            </button>
+        <h4 className="font-bold text-sm text-gray-500 uppercase tracking-widest border-b pb-2">Seleccionar Fecha y Horario</h4>
+        
+        {fechasHabilitadas.size === 0 && (
+          <div className="p-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl flex items-center gap-2">
+            <span className="material-symbols-outlined text-amber-500">warning</span>
+            No hay disponibilidad para esta modalidad con la especialista seleccionada.
           </div>
+        )}
 
-          {renderDias()}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+          {/* LADO IZQUIERDO: CALENDARIO */}
+          <div className="lg:col-span-7 bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
+            <div>
+              <div className="flex justify-between items-center mb-6">
+                <button
+                  type="button"
+                  onClick={() => cambiarMes(-1)}
+                  className="p-2 hover:bg-gray-200 rounded-full text-gray-600 transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[20px]">chevron_left</span>
+                </button>
+                <span className="font-bold text-sm text-slate-800 uppercase tracking-wider">
+                  {calendarMonth.toLocaleDateString('es-PE', { month: 'long', year: 'numeric' })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => cambiarMes(1)}
+                  className="p-2 hover:bg-gray-200 rounded-full text-gray-600 transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[20px]">chevron_right</span>
+                </button>
+              </div>
 
-          {fechaSeleccionada && (
-            <div className="mt-6 pt-4 border-t border-slate-200 text-center">
-              <p className="text-xs text-gray-400">Fecha seleccionada</p>
-              <p className="font-bold text-sm text-[#003178] mt-1 text-capitalize">
-                {fechaSeleccionada.toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-              </p>
+              {renderDias()}
             </div>
-          )}
-        </div>
-      </div>
-    );
-  };
 
-  const renderStep5 = () => {
-    if (loadingSlots) {
-      return (
-        <div className="flex justify-center items-center py-10">
-          <div className="w-8 h-8 border-3 border-[#003178] border-t-transparent rounded-full animate-spin"></div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="space-y-6">
-        <h4 className="font-bold text-sm text-gray-500 uppercase tracking-widest border-b pb-2">Seleccionar Horario y Modalidad</h4>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div>
-            <h5 className="font-bold text-sm text-slate-700 mb-3">Horas Disponibles</h5>
-            {slotsDisponibles.length === 0 ? (
-              <p className="text-sm text-gray-500 bg-gray-50 border rounded-xl p-4">No hay horarios libres para esta fecha. Intenta cambiar de día en el paso anterior.</p>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-2">
-                {slotsDisponibles.map(slot => {
-                  const isSelected = slotSeleccionado?.id === slot.id;
-                  return (
-                    <button
-                      key={slot.id}
-                      type="button"
-                      className={`p-3 rounded-xl border text-center font-bold text-sm transition-all cursor-pointer ${isSelected
-                          ? 'bg-[#003178] border-[#003178] text-white shadow-sm'
-                          : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                        }`}
-                      onClick={() => setSlotSeleccionado(slot)}
-                    >
-                      {slot.inicio}
-                    </button>
-                  );
-                })}
+            {fechaSeleccionada && (
+              <div className="mt-6 pt-4 border-t border-slate-200 text-center">
+                <p className="text-xs text-gray-400">Fecha seleccionada</p>
+                <p className="font-bold text-sm text-[#003178] mt-1 text-capitalize">
+                  {fechaSeleccionada.toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                </p>
               </div>
             )}
           </div>
 
-          <div className="space-y-4">
-            <div>
-              <h5 className="font-bold text-sm text-slate-700 mb-3">Modalidad</h5>
+          {/* LADO DERECHO: MODALIDAD Y HORARIOS */}
+          <div className="lg:col-span-5 flex flex-col space-y-6">
+            {/* Modalidad */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 shadow-sm shrink-0">
+              <h5 className="font-bold text-sm text-slate-700 mb-3 uppercase tracking-wider">1. Modalidad</h5>
               <div className="flex gap-4">
                 <button
                   type="button"
-                  className={`flex-1 py-3 px-4 rounded-xl border font-bold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${modalidad === 'presencial'
-                      ? 'bg-[#003178] border-[#003178] text-white'
+                  className={`flex-1 py-3.5 px-4 rounded-xl border font-bold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    modalidad === 'Presencial'
+                      ? 'bg-[#003178] border-[#003178] text-white shadow-md'
                       : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                    }`}
-                  onClick={() => setModalidad('presencial')}
+                  }`}
+                  onClick={async () => {
+                    if (modalidad !== 'Presencial') {
+                      setModalidad('Presencial');
+                      setFechaSeleccionada(null);
+                      setSlotSeleccionado(null);
+                      await cargarFechasHabilitadas(psicologaSeleccionada.id, 'Presencial');
+                      actualizarProximasFechas('Presencial');
+                    }
+                  }}
                 >
                   <span className="material-symbols-outlined text-[18px]">storefront</span>
                   Presencial
                 </button>
                 <button
                   type="button"
-                  className={`flex-1 py-3 px-4 rounded-xl border font-bold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${modalidad === 'virtual'
-                      ? 'bg-[#003178] border-[#003178] text-white'
+                  className={`flex-1 py-3.5 px-4 rounded-xl border font-bold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    modalidad === 'Virtual'
+                      ? 'bg-[#003178] border-[#003178] text-white shadow-md'
                       : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                    }`}
-                  onClick={() => {
-                    setModalidad('virtual');
-                    setMetodoPago('tarjeta');
+                  }`}
+                  onClick={async () => {
+                    if (modalidad !== 'Virtual') {
+                      setModalidad('Virtual');
+                      setFechaSeleccionada(null);
+                      setSlotSeleccionado(null);
+                      setMetodoPago('tarjeta'); // Auto-set for virtual sessions
+                      await cargarFechasHabilitadas(psicologaSeleccionada.id, 'Virtual');
+                      actualizarProximasFechas('Virtual');
+                    }
                   }}
                 >
                   <span className="material-symbols-outlined text-[18px]">videocam</span>
@@ -1107,15 +1127,46 @@ const BookAppointment = () => {
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Comentario para el Especialista (Opcional)</label>
-              <textarea
-                value={comentario}
-                onChange={e => setComentario(e.target.value)}
-                placeholder="¿Deseas agregar alguna observación o motivo de consulta?"
-                rows="3"
-                className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none resize-none"
-              />
+            {/* Horarios */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 shadow-sm flex-1 flex flex-col">
+              <h5 className="font-bold text-sm text-slate-700 mb-3 uppercase tracking-wider shrink-0">2. Horarios Disponibles</h5>
+              {!fechaSeleccionada ? (
+                <div className="flex-1 flex items-center justify-center min-h-[160px]">
+                  <p className="text-xs text-gray-550 bg-white border border-gray-150 rounded-xl p-4 text-center w-full">
+                    Selecciona una fecha en el calendario para ver los horarios.
+                  </p>
+                </div>
+              ) : loadingSlots ? (
+                <div className="flex-1 flex items-center justify-center min-h-[160px]">
+                  <div className="w-6 h-6 border-2 border-[#003178] border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              ) : slotsDisponibles.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center min-h-[160px]">
+                  <p className="text-xs text-gray-550 bg-white border border-gray-150 rounded-xl p-4 text-center w-full">
+                    No hay horarios libres para esta fecha.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 overflow-y-auto pr-1 flex-1 min-h-[160px]">
+                  {slotsDisponibles.map(slot => {
+                    const isSelected = slotSeleccionado?.id === slot.id;
+                    return (
+                      <button
+                        key={slot.id}
+                        type="button"
+                        className={`p-2.5 rounded-xl border text-center font-bold text-xs transition-all cursor-pointer h-10 flex items-center justify-center ${
+                          isSelected
+                            ? 'bg-[#003178] border-[#003178] text-white shadow-sm'
+                            : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                        }`}
+                        onClick={() => setSlotSeleccionado(slot)}
+                      >
+                        {slot.inicio}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1123,7 +1174,7 @@ const BookAppointment = () => {
     );
   };
 
-  const renderStep6 = () => {
+  const renderStep5 = () => {
     let pacienteNombre;
     if (paraQuien === 'yo') {
       const nameYo = perfilClinicoPropio 
@@ -1217,12 +1268,12 @@ const BookAppointment = () => {
                 <label className={`flex items-center p-4 border rounded-2xl cursor-pointer transition-all ${metodoPago === 'clinica'
                     ? 'border-[#003178] bg-blue-50/20 shadow-sm'
                     : 'border-gray-200 hover:bg-gray-50'
-                  } ${modalidad === 'virtual' ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                  } ${modalidad === 'Virtual' ? 'opacity-50 cursor-not-allowed' : ''}`}>
                   <input
                     type="radio"
                     name="metodoPago"
                     value="clinica"
-                    disabled={modalidad === 'virtual'}
+                    disabled={modalidad === 'Virtual'}
                     checked={metodoPago === 'clinica'}
                     onChange={() => setMetodoPago('clinica')}
                     className="w-4 h-4 text-[#003178] focus:ring-[#003178]"
@@ -1254,7 +1305,7 @@ const BookAppointment = () => {
                 </label>
               </div>
 
-              {modalidad === 'virtual' && (
+              {modalidad === 'Virtual' && (
                 <p className="text-[11px] text-amber-600 font-medium">
                   * Para consultas virtuales, solo se permite Pago Online.
                 </p>
@@ -1329,7 +1380,6 @@ const BookAppointment = () => {
             {step === 3 && renderStep3()}
             {step === 4 && renderStep4()}
             {step === 5 && renderStep5()}
-            {step === 6 && renderStep6()}
           </div>
 
           {/* Botones de navegación del stepper */}
@@ -1343,7 +1393,7 @@ const BookAppointment = () => {
               Atrás
             </button>
 
-            {step < 6 ? (
+            {step < 5 ? (
               <button
                 type="button"
                 onClick={nextStep}
@@ -1375,6 +1425,65 @@ const BookAppointment = () => {
           onPay={saveAppointment}
           navigate={navigate}
         />
+      )}
+
+      {showCommentsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="relative bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden p-6">
+            <header className="flex justify-between items-center pb-3 border-b mb-4">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[#003178]">rate_review</span>
+                <h4 className="font-bold text-base text-gray-900">
+                  Comentarios para el Especialista
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCommentsModal(false)}
+                className="text-gray-400 hover:text-gray-650 p-1 rounded-full hover:bg-gray-100 cursor-pointer"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </header>
+            <div className="space-y-4">
+              <p className="text-xs text-gray-500 leading-relaxed">
+                ¿Deseas agregar alguna observación o motivo de consulta? Este comentario es opcional.
+              </p>
+              <textarea
+                value={tempComentario}
+                onChange={e => setTempComentario(e.target.value)}
+                placeholder="Escribe tu comentario aquí..."
+                rows="4"
+                className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none resize-none"
+              />
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setComentario('');
+                    setTempComentario('');
+                    setShowCommentsModal(false);
+                    setStep(5);
+                  }}
+                  className="px-4 py-2 text-xs font-bold border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-500 cursor-pointer"
+                >
+                  Omitir / Continuar sin comentario
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setComentario(tempComentario);
+                    setShowCommentsModal(false);
+                    setStep(5);
+                  }}
+                  className="px-4 py-2 bg-[#003178] hover:bg-blue-900 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
+                >
+                  Guardar y continuar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </DashboardLayout>
   );

@@ -359,15 +359,19 @@ export const obtenerPsicologasPorServicio = async (servicioId) => {
   }
 };
 
-export const obtenerHorariosPsicologas = async (psicologoId, fecha) => {
+export const obtenerHorariosPsicologas = async (psicologoId, fecha, modalidad) => {
   try {
     let query = supabase
-      .from('horarios_psicologas')
+      .from('horarios_empleados')
       .select('*')
-      .eq('psicologo_id', psicologoId);
+      .eq('empleado_id', psicologoId);
 
     if (fecha) {
       query = query.eq('fecha', fecha);
+    }
+
+    if (modalidad) {
+      query = query.eq('modalidad', modalidad);
     }
 
     const { data, error } = await query;

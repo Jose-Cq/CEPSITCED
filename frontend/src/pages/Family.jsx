@@ -22,7 +22,7 @@ const getFlagEmoji = (iso2) => {
 
 const Family = ({ onNavigate }) => {
   const { loading, perfilesDependientes, refetch } = usePacienteActual();
-  const [filterRelative, setFilterRelative] = useState('all');
+  const [memberSearch, setMemberSearch] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -299,12 +299,15 @@ const Family = ({ onNavigate }) => {
     }
   };
 
-  const getFilteredRelatives = () => {
-    if (filterRelative === 'all') return perfilesDependientes;
-    return perfilesDependientes.filter(r => r.id_paciente === filterRelative);
-  };
-
-  const filteredRelatives = getFilteredRelatives();
+  const searchTerm = memberSearch.trim().toLowerCase();
+  const filteredRelatives = (perfilesDependientes || []).filter((member) => {
+    const fullName = `${member.nombres ?? ''} ${member.apellido_paterno ?? ''} ${member.apellido_materno ?? ''}`.toLowerCase();
+    const dni = String(member.dni ?? '').toLowerCase();
+    return (
+      fullName.includes(searchTerm) ||
+      dni.includes(searchTerm)
+    );
+  });
 
   // Filtrado de Ubigeo
   const deptObj = departamentos.find(d => d.name === newProfile.departamento);
@@ -341,30 +344,37 @@ const Family = ({ onNavigate }) => {
         </div>
       ) : (
         <>
-          {/* Sección de filtro */}
-          {perfilesDependientes.length > 0 && (
-            <div className="bg-white border border-gray-200 rounded-xl p-4 mb-8 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <label className="font-semibold text-sm text-gray-700 flex items-center gap-2">
-                <span className="material-symbols-outlined text-gray-400 text-[18px]">filter_list</span>
-                Filtrar miembros:
+          {/* Campo de búsqueda */}
+          {perfilesDependientes && perfilesDependientes.length > 0 && (
+            <div className="bg-white border border-gray-200 rounded-xl p-5 mb-8 shadow-sm max-w-xl flex flex-col sm:flex-row sm:items-center gap-4">
+              <label htmlFor="member-search-input" className="font-bold text-xs text-gray-500 uppercase flex items-center gap-1.5 tracking-wider shrink-0 select-none">
+                <span className="material-symbols-outlined text-gray-400 text-[18px]">search</span>
+                Buscar miembro
               </label>
-              <select
-                className="bg-gray-50 border border-gray-200 rounded-md px-4 py-2 text-sm text-gray-700 focus:border-[#003178] focus:ring-1 focus:ring-[#003178] outline-none transition-colors w-full sm:w-auto min-w-[200px]"
-                value={filterRelative}
-                onChange={(e) => setFilterRelative(e.target.value)}
-              >
-                <option value="all">Todos los miembros dependientes</option>
-                {perfilesDependientes.map(r => (
-                  <option key={r.id_paciente} value={r.id_paciente}>
-                    {r.nombres} {r.apellido_paterno} ({r.parentesco})
-                  </option>
-                ))}
-              </select>
+              <div className="relative flex-1">
+                <input
+                  id="member-search-input"
+                  type="text"
+                  placeholder="Buscar por DNI o nombre..."
+                  className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 pr-10 text-sm text-gray-750 focus:border-[#003178] outline-none transition-colors w-full h-[46px]"
+                  value={memberSearch}
+                  onChange={(e) => setMemberSearch(e.target.value)}
+                />
+                {memberSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setMemberSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-650 transition-colors p-0.5 rounded-full hover:bg-gray-150 flex items-center justify-center cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">close</span>
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
           {/* Cuadrícula de miembros */}
-          {filteredRelatives.length === 0 ? (
+          {perfilesDependientes && perfilesDependientes.length === 0 ? (
             <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center shadow-sm">
               <span className="material-symbols-outlined text-gray-300 text-6xl mb-4">groups</span>
               <h3 className="text-xl font-bold text-gray-900 mb-1">Sin miembros dependientes</h3>
@@ -378,6 +388,14 @@ const Family = ({ onNavigate }) => {
                 <span className="material-symbols-outlined text-[18px]">person_add</span>
                 Crear Primer Miembro
               </button>
+            </div>
+          ) : filteredRelatives.length === 0 ? (
+            <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center shadow-sm">
+              <span className="material-symbols-outlined text-gray-300 text-6xl mb-4">search_off</span>
+              <h3 className="text-xl font-bold text-gray-900 mb-1">Sin resultados</h3>
+              <p className="text-gray-500 text-sm">
+                No se encontraron miembros con ese DNI o nombre.
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">

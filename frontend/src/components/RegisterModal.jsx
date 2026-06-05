@@ -903,9 +903,9 @@ const RegisterModal = ({ isOpen, onClose }) => {
   ];
 
   return (
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 animate-in fade-in duration-150">
       <div className="absolute inset-0 bg-[#001d32]/90 backdrop-blur-sm" onClick={handleClose}></div>
-      <div className="relative w-full max-w-5xl max-h-[95vh] bg-white rounded-[2.5rem] shadow-2xl overflow-y-auto p-8 md:p-12 zoom-in animate-in duration-300">
+      <div className="relative w-full max-w-5xl max-h-[95vh] bg-white rounded-[2.5rem] shadow-2xl overflow-y-auto p-8 md:p-12">
 
         <header className="mb-6 flex justify-between items-start">
           <div>

@@ -40,12 +40,27 @@ const PsychologistDetailModal = ({ isOpen, onClose, psychologist }) => {
 
           <div>
             {/* Foto de Perfil */}
-            <div className="w-40 h-40 md:w-48 md:h-48 rounded-2xl overflow-hidden border-4 border-white/10 shadow-lg mx-auto mb-6 bg-blue-900/50">
-              <img
-                src={psychologist.foto}
-                alt={psychologist.nombre}
-                className="w-full h-full object-cover object-top"
-              />
+            <div className="w-40 h-40 md:w-48 md:h-48 rounded-2xl overflow-hidden border-4 border-white/10 shadow-lg mx-auto mb-6 bg-blue-900/50 flex items-center justify-center text-white">
+              {psychologist.foto ? (
+                <img
+                  src={psychologist.foto}
+                  alt={psychologist.nombre}
+                  className="w-full h-full object-cover object-top"
+                />
+              ) : (
+                <span className="text-5xl font-bold uppercase select-none">
+                  {(() => {
+                    const safeValue = String(psychologist.nombre || 'Especialista').trim();
+                    return safeValue
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .map(word => word[0])
+                      .join('')
+                      .slice(0, 2)
+                      .toUpperCase();
+                  })()}
+                </span>
+              )}
             </div>
 
             {/* Identificación Básica */}
