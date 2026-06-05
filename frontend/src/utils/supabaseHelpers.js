@@ -84,12 +84,69 @@ export const verificarDuplicadoDNI = async (dni) => {
   }
 };
 
+// Helper to filter only valid columns for the "pacientes" table and remove undefined properties
+const filterValidPatientFields = (data) => {
+  const allowedKeys = [
+    'numero_hc',
+    'dni',
+    'genero',
+    'fecha_nacimiento',
+    'lugar_familia',
+    'estado_civil',
+    'grado_instruccion',
+    'ocupacion',
+    'direccion',
+    'telefono',
+    'correo',
+    'nombres',
+    'apellido_paterno',
+    'apellido_materno',
+    'pais',
+    'departamento',
+    'provincia',
+    'distrito',
+    'estado_cuenta',
+    'id_perfil_propio',
+    'id_apoderado',
+    'parentesco'
+  ];
+
+  const cleaned = {};
+  for (const key in data) {
+    if (allowedKeys.includes(key) && data[key] !== undefined) {
+      cleaned[key] = data[key];
+    }
+  }
+  return cleaned;
+};
+
 // ========== PACIENTES ==========
 export const registrarPaciente = async (pacienteData) => {
+  console.log('Paciente payload enviado a Supabase:', pacienteData);
+
+  if (!pacienteData.numero_hc) {
+    console.error("registrarPaciente error: numero_hc es obligatorio.");
+    return { success: false, error: "El número de historia clínica es obligatorio." };
+  }
+  if (!pacienteData.dni) {
+    console.error("registrarPaciente error: dni es obligatorio.");
+    return { success: false, error: "El DNI/Documento es obligatorio." };
+  }
+  if (!pacienteData.genero) {
+    console.error("registrarPaciente error: genero es obligatorio.");
+    return { success: false, error: "El género es obligatorio." };
+  }
+  if (!pacienteData.fecha_nacimiento) {
+    console.error("registrarPaciente error: fecha_nacimiento es obligatorio.");
+    return { success: false, error: "La fecha de nacimiento es obligatoria." };
+  }
+
+  const cleanedData = filterValidPatientFields(pacienteData);
+
   try {
     const { data, error } = await supabase
       .from('pacientes')
-      .insert([pacienteData])
+      .insert([cleanedData])
       .select()
       .single();
 
@@ -118,10 +175,14 @@ export const obtenerPacienteActual = async (authId) => {
 };
 
 export const actualizarPaciente = async (pacienteId, updateData) => {
+  console.log('Paciente payload enviado a Supabase (actualizarPaciente):', updateData);
+
+  const cleanedData = filterValidPatientFields(updateData);
+
   try {
     const { data, error } = await supabase
       .from('pacientes')
-      .update(updateData)
+      .update(cleanedData)
       .eq('id_paciente', pacienteId)
       .select()
       .single();

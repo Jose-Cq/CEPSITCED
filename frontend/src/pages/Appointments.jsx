@@ -171,7 +171,7 @@ const Appointments = ({ onNavigate }) => {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-100">
-                    <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Paciente (Perfil)</th>
+                    <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Paciente (Miembro)</th>
                     <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Especialista</th>
                     <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Servicio</th>
                     <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Fecha y Hora</th>

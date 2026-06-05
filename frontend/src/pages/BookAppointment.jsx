@@ -701,13 +701,13 @@ const BookAppointment = () => {
                 <span className="material-symbols-outlined">groups</span>
               </div>
               <div>
-                <p className="font-bold text-gray-900 text-sm">Cita para otro perfil</p>
+                <p className="font-bold text-gray-900 text-sm">Cita para otro miembro</p>
                 <p className="text-xs text-gray-500 mt-0.5">Hijo, pareja o familiar dependiente</p>
               </div>
             </div>
           </button>
         </div>
-
+ 
         {paraQuien === 'yo' && (
           <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
             <h4 className="font-bold text-sm text-slate-800 uppercase tracking-wider mb-3">Datos del Titular</h4>
@@ -721,7 +721,7 @@ const BookAppointment = () => {
                 <p className="font-semibold text-slate-900">{perfilUsuario?.dni}</p>
               </div>
             </div>
-
+ 
             {esClinicoIncompletoYo && (
               <div className="mt-4 p-4 bg-red-50 border border-red-100 text-red-800 rounded-xl flex gap-3">
                 <span className="material-symbols-outlined text-red-500 text-[20px] shrink-0 mt-0.5">warning</span>
@@ -743,21 +743,21 @@ const BookAppointment = () => {
             )}
           </div>
         )}
-
+ 
         {paraQuien === 'familiar' && (
           <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
-            <h4 className="font-bold text-sm text-slate-800 uppercase tracking-wider">Seleccionar Perfil Dependiente</h4>
-
+            <h4 className="font-bold text-sm text-slate-800 uppercase tracking-wider">Seleccionar Miembro Dependiente</h4>
+ 
             {perfilesDependientes.length === 0 ? (
               <div className="text-center py-6">
-                <p className="text-sm text-gray-500 mb-3">No tienes ningún perfil dependiente registrado en esta cuenta.</p>
+                <p className="text-sm text-gray-500 mb-3">No tienes ningún miembro dependiente registrado en esta cuenta.</p>
                 <button
                   type="button"
                   onClick={() => navigate('/dashboard/family')}
                   className="bg-[#003178] hover:bg-blue-900 text-white font-bold text-xs px-4 py-2 rounded-lg transition-colors inline-flex items-center gap-1.5 cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[16px]">person_add</span>
-                  Agregar Perfil Dependiente
+                  Agregar Miembro Dependiente
                 </button>
               </div>
             ) : (
@@ -769,7 +769,7 @@ const BookAppointment = () => {
                     onChange={e => setFamiliarId(e.target.value)}
                     className="w-full p-3 border border-gray-200 bg-white rounded-xl text-sm focus:border-[#003178] outline-none text-gray-700"
                   >
-                    <option value="">Selecciona un perfil...</option>
+                    <option value="">Selecciona un miembro...</option>
                     {perfilesDependientes.map(dep => (
                       <option key={dep.id_paciente} value={dep.id_paciente}>
                         {dep.nombres} {dep.apellido_paterno} ({dep.parentesco}) - DNI: {dep.dni}
@@ -777,14 +777,14 @@ const BookAppointment = () => {
                     ))}
                   </select>
                 </div>
-
+ 
                 {familiarId && esClinicoIncompletoFamiliar && (
                   <div className="p-4 bg-red-50 border border-red-100 text-red-800 rounded-xl flex gap-3">
                     <span className="material-symbols-outlined text-red-500 text-[20px] shrink-0 mt-0.5">warning</span>
                     <div>
                       <p className="text-xs font-bold uppercase tracking-wide">Ficha Clínica Incompleta del Familiar</p>
                       <p className="text-xs text-red-600 mt-1 leading-relaxed">
-                        Para agendar una cita para este familiar, primero debes completar los campos obligatorios de su ficha clínica (dirección, género, ubigeo para Perú, etc.) en "Perfiles".
+                        Para agendar una cita para este familiar, primero debes completar los campos obligatorios de su ficha clínica (dirección, género, ubigeo para Perú, etc.) en "Miembros".
                       </p>
                       <button
                         type="button"
@@ -792,7 +792,7 @@ const BookAppointment = () => {
                         className="mt-3 bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
                       >
                         <span className="material-symbols-outlined text-[14px]">edit</span>
-                        Completar Perfil del Familiar
+                        Completar Datos del Familiar
                       </button>
                     </div>
                   </div>
@@ -1304,7 +1304,7 @@ const BookAppointment = () => {
       <DashboardLayout currentPath="/dashboard/book-appointment">
         <div className="flex justify-center items-center py-20">
           <div className="w-10 h-10 border-4 border-[#003178] border-t-transparent rounded-full animate-spin"></div>
-          <span className="ml-3 text-gray-600">Cargando datos de perfil...</span>
+          <span className="ml-3 text-gray-600">Cargando datos de miembro...</span>
         </div>
       </DashboardLayout>
     );

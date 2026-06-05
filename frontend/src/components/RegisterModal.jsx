@@ -96,9 +96,22 @@ const ComboBox = ({
   const updateCoords = () => {
     if (triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
+      const scrollX = window.scrollX;
+      const scrollY = window.scrollY;
+      const windowWidth = window.innerWidth;
+      const estimatedWidth = Math.max(rect.width, Math.min(360, windowWidth * 0.9));
+      
+      let left = rect.left + scrollX;
+      if (rect.left + estimatedWidth > windowWidth) {
+        left = windowWidth - estimatedWidth - 16 + scrollX;
+      }
+      if (left < scrollX + 10) {
+        left = scrollX + 10;
+      }
+
       setCoords({
-        top: rect.bottom + window.scrollY,
-        left: rect.left + window.scrollX,
+        top: rect.bottom + scrollY,
+        left,
         width: rect.width
       });
     }
@@ -162,7 +175,9 @@ const ComboBox = ({
               position: 'absolute',
               top: `${coords.top}px`,
               left: `${coords.left}px`,
-              width: `${coords.width}px`,
+              minWidth: `${coords.width}px`,
+              width: 'max-content',
+              maxWidth: 'min(360px, 90vw)'
             }}
             className="bg-white border border-gray-200 rounded-2xl shadow-xl z-[99999] overflow-hidden flex flex-col max-h-64 animate-in fade-in slide-in-from-top-1 duration-150"
           >
@@ -194,17 +209,17 @@ const ComboBox = ({
                     <div
                       key={idx}
                       onClick={() => handleSelect(opt)}
-                      className={`px-4 py-3 hover:bg-gray-50 text-sm cursor-pointer transition-colors flex items-center justify-between ${
+                      className={`px-4 py-3 hover:bg-gray-50 text-sm cursor-pointer transition-colors flex items-center justify-between gap-3 ${
                         isSelected ? 'bg-blue-50/50 text-[#003178] font-bold' : 'text-gray-700'
                       }`}
                     >
-                      <div className="flex items-center gap-2 truncate">
+                      <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
                         {typeof opt === 'object' && opt.flag && (
                           <span className="inline-flex items-center shrink-0">
                             {opt.flag}
                           </span>
                         )}
-                        <span className="truncate">{optLabel}</span>
+                        <span className="whitespace-normal break-words">{optLabel}</span>
                       </div>
                       {isSelected && (
                         <span className="material-symbols-outlined text-[#003178] text-base shrink-0 select-none">check</span>
@@ -389,6 +404,16 @@ const RegisterModal = ({ isOpen, onClose }) => {
     setProxyPhoneNumber('');
   };
 
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handleLimitInput = (e, limit, setter) => {
@@ -441,6 +466,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setSubmitError('');
     setSuccessMessage('');
 
@@ -490,26 +516,28 @@ const RegisterModal = ({ isOpen, onClose }) => {
       return;
     }
 
-    // Validaciones de Documento del Paciente
+    // Validaciones de Documento del Paciente y Apoderado
     const patientDniClean = finalPatientData.tipoDocumento === 'DNI'
-      ? finalPatientData.dni.replace(/\D/g, '')
-      : finalPatientData.dni.trim();
+      ? String(finalPatientData.dni || '').replace(/\D/g, '')
+      : String(finalPatientData.dni || '').replace(/\s/g, '').toLowerCase();
 
-    if (finalPatientData.tipoDocumento === 'DNI' && patientDniClean.length !== 8) {
-      setSubmitError('El DNI del paciente debe tener exactamente 8 dígitos.');
+    const proxyDniClean = isProxy
+      ? (finalProxyData.tipoDocumento === 'DNI'
+          ? String(finalProxyData.dni || '').replace(/\D/g, '')
+          : String(finalProxyData.dni || '').replace(/\s/g, '').toLowerCase())
+      : '';
+
+    if (!patientDniClean) {
+      setSubmitError('El documento del paciente es obligatorio.');
       return;
     }
-    if (finalPatientData.tipoDocumento !== 'DNI' && patientDniClean.length < 12) {
-      setSubmitError('El Carnet de extranjería del paciente debe tener al menos 12 caracteres.');
+    if (finalPatientData.tipoDocumento === 'DNI' && patientDniClean.length !== 8) {
+      setSubmitError('El DNI del paciente debe tener exactamente 8 dígitos.');
       return;
     }
 
     // Validar modo apoderado
     if (isProxy) {
-      const proxyDniClean = finalProxyData.tipoDocumento === 'DNI'
-        ? finalProxyData.dni.replace(/\D/g, '')
-        : finalProxyData.dni.trim();
-
       if (!proxyDniClean || !finalProxyData.nombres || !finalProxyData.apellidoPaterno || !finalProxyData.apellidoMaterno) {
         setSubmitError('Completa los datos del apoderado.');
         return;
@@ -518,13 +546,21 @@ const RegisterModal = ({ isOpen, onClose }) => {
         setSubmitError('El DNI del apoderado debe tener exactamente 8 dígitos.');
         return;
       }
-      if (finalProxyData.tipoDocumento !== 'DNI' && proxyDniClean.length < 12) {
-        setSubmitError('El Carnet de extranjería del apoderado debe tener al menos 12 caracteres.');
-        return;
-      }
       if (!proxyPhoneFull) {
         setSubmitError('El celular del apoderado es obligatorio.');
         return;
+      }
+      const proxyDigits = proxyPhoneNumber.replace(/\D/g, '');
+      if (proxyPhonePrefix === '+51') {
+        if (proxyDigits.length !== 9) {
+          setSubmitError('El celular del apoderado para Perú (+51) debe tener exactamente 9 dígitos.');
+          return;
+        }
+      } else {
+        if (proxyDigits.length < 5 || proxyDigits.length > 15) {
+          setSubmitError('El celular del apoderado debe tener entre 5 y 15 dígitos.');
+          return;
+        }
       }
       if (!finalProxyData.parentesco) {
         setSubmitError('El parentesco del apoderado es obligatorio.');
@@ -543,6 +579,18 @@ const RegisterModal = ({ isOpen, onClose }) => {
       if (!patientPhoneFull) {
         setSubmitError('El celular es obligatorio.');
         return;
+      }
+      const patientDigits = patientPhoneNumber.replace(/\D/g, '');
+      if (patientPhonePrefix === '+51') {
+        if (patientDigits.length !== 9) {
+          setSubmitError('El celular para Perú (+51) debe tener exactamente 9 dígitos.');
+          return;
+        }
+      } else {
+        if (patientDigits.length < 5 || patientDigits.length > 15) {
+          setSubmitError('El celular debe tener entre 5 y 15 dígitos.');
+          return;
+        }
       }
       if (!finalPatientData.correoReal || !finalPatientData.correoReal.includes('@')) {
         setSubmitError('El correo electrónico es obligatorio y debe ser válido.');
@@ -563,10 +611,6 @@ const RegisterModal = ({ isOpen, onClose }) => {
       }
 
       if (isProxy) {
-        const proxyDniClean = finalProxyData.tipoDocumento === 'DNI'
-          ? finalProxyData.dni.replace(/\D/g, '')
-          : finalProxyData.dni.trim();
-
         if (patientDniClean === proxyDniClean) {
           throw new Error('El DNI del apoderado y del paciente no pueden ser iguales.');
         }
@@ -592,10 +636,14 @@ const RegisterModal = ({ isOpen, onClose }) => {
           ultimoHC
         );
 
-        const email = finalPatientData.correoReal;
+        const authEmail = `${patientDniClean}@paciente.cepsitced.com`;
+
+        // console.log('SIGNUP EMAIL:', authEmail);
+        // console.log('SIGNUP DNI:', patientDniClean);
+        // console.log('FORM DATA REGISTRO:', finalPatientData);
 
         const { data: authData, error: authError } = await supabase.auth.signUp({
-          email,
+          email: authEmail,
           password,
         });
 
@@ -607,15 +655,20 @@ const RegisterModal = ({ isOpen, onClose }) => {
         const authId = authData.user?.id;
         if (!authId) throw new Error('No se pudo crear la cuenta de usuario.');
 
+        if (!numeroHC) throw new Error('Error al generar la Historia Clínica.');
+        if (!patientDniClean) throw new Error('El DNI del paciente es obligatorio.');
+        if (!finalPatientData.genero) throw new Error('El género del paciente es obligatorio.');
+        if (!finalPatientData.fechaNacimiento) throw new Error('La fecha de nacimiento del paciente es obligatoria.');
+
         const perfilRes = await registrarPerfil({
           id: authId,
           dni: patientDniClean,
-          nombres: finalPatientData.nombres,
-          apellido_paterno: finalPatientData.apellidoPaterno,
-          apellido_materno: finalPatientData.apellidoMaterno,
+          nombres: finalPatientData.nombres ?? null,
+          apellido_paterno: finalPatientData.apellidoPaterno ?? null,
+          apellido_materno: finalPatientData.apellidoMaterno ?? null,
           fecha_nacimiento: finalPatientData.fechaNacimiento,
-          telefono: finalPatientData.telefono,
-          correo: finalPatientData.correoReal
+          telefono: finalPatientData.telefono ?? null,
+          correo: authEmail
         });
 
         if (!perfilRes.success) throw new Error(`Error de perfil: ${perfilRes.error}`);
@@ -625,20 +678,20 @@ const RegisterModal = ({ isOpen, onClose }) => {
           dni: patientDniClean,
           genero: finalPatientData.genero,
           fecha_nacimiento: finalPatientData.fechaNacimiento,
-          lugar_familia: finalPatientData.lugarFamilia || null,
-          estado_civil: finalPatientData.estadoCivil || null,
-          grado_instruccion: finalPatientData.gradoInstruccion || null,
-          ocupacion: finalPatientData.ocupacion || null,
-          direccion: finalPatientData.direccion,
-          telefono: finalPatientData.telefono,
-          correo: finalPatientData.correoReal,
-          nombres: finalPatientData.nombres,
-          apellido_paterno: finalPatientData.apellidoPaterno,
-          apellido_materno: finalPatientData.apellidoMaterno,
-          pais: finalPatientData.pais,
-          departamento: finalPatientData.pais === 'Perú' ? finalPatientData.departamento : null,
-          provincia: finalPatientData.pais === 'Perú' ? finalPatientData.provincia : null,
-          distrito: finalPatientData.pais === 'Perú' ? finalPatientData.distrito : null,
+          lugar_familia: finalPatientData.lugarFamilia ?? null,
+          estado_civil: finalPatientData.estadoCivil ?? null,
+          grado_instruccion: finalPatientData.gradoInstruccion ?? null,
+          ocupacion: finalPatientData.ocupacion ?? null,
+          direccion: finalPatientData.direccion ?? null,
+          telefono: finalPatientData.telefono ?? null,
+          correo: finalPatientData.correoReal ?? null,
+          nombres: finalPatientData.nombres ?? null,
+          apellido_paterno: finalPatientData.apellidoPaterno ?? null,
+          apellido_materno: finalPatientData.apellidoMaterno ?? null,
+          pais: finalPatientData.pais ?? null,
+          departamento: finalPatientData.pais === 'Perú' ? (finalPatientData.departamento ?? null) : null,
+          provincia: finalPatientData.pais === 'Perú' ? (finalPatientData.provincia ?? null) : null,
+          distrito: finalPatientData.pais === 'Perú' ? (finalPatientData.distrito ?? null) : null,
           estado_cuenta: 'INDEPENDIENTE',
           id_perfil_propio: authId,
           id_apoderado: null,
@@ -664,10 +717,11 @@ const RegisterModal = ({ isOpen, onClose }) => {
         );
         const proxyHC = aRes.numeroHC;
 
-        const proxyDniClean = finalProxyData.tipoDocumento === 'DNI'
-          ? finalProxyData.dni.replace(/\D/g, '')
-          : finalProxyData.dni.trim();
-        const proxyAuthEmail = finalProxyData.correoReal;
+        const proxyAuthEmail = `${proxyDniClean}@paciente.cepsitced.com`;
+
+        // console.log('SIGNUP EMAIL:', proxyAuthEmail);
+        // console.log('SIGNUP DNI (APODERADO):', proxyDniClean);
+        // console.log('FORM DATA REGISTRO (APODERADO):', finalProxyData);
 
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email: proxyAuthEmail,
@@ -682,15 +736,25 @@ const RegisterModal = ({ isOpen, onClose }) => {
         const authId = authData.user?.id;
         if (!authId) throw new Error('No se pudo crear la cuenta del apoderado.');
 
+        if (!proxyHC) throw new Error('Error al generar la Historia Clínica del apoderado.');
+        if (!proxyDniClean) throw new Error('El DNI del apoderado es obligatorio.');
+        if (!finalProxyData.genero) throw new Error('El género del apoderado es obligatorio.');
+        if (!finalProxyData.fechaNacimiento) throw new Error('La fecha de nacimiento del apoderado es obligatoria.');
+
+        if (!patientHC) throw new Error('Error al generar la Historia Clínica del paciente.');
+        if (!patientDniClean) throw new Error('El DNI del paciente es obligatorio.');
+        if (!finalPatientData.genero) throw new Error('El género del paciente es obligatorio.');
+        if (!finalPatientData.fechaNacimiento) throw new Error('La fecha de nacimiento del paciente es obligatoria.');
+
         const perfilRes = await registrarPerfil({
           id: authId,
           dni: proxyDniClean,
-          nombres: finalProxyData.nombres,
-          apellido_paterno: finalProxyData.apellidoPaterno,
-          apellido_materno: finalProxyData.apellidoMaterno,
+          nombres: finalProxyData.nombres ?? null,
+          apellido_paterno: finalProxyData.apellidoPaterno ?? null,
+          apellido_materno: finalProxyData.apellidoMaterno ?? null,
           fecha_nacimiento: finalProxyData.fechaNacimiento,
-          telefono: finalProxyData.telefono,
-          correo: finalProxyData.correoReal
+          telefono: finalProxyData.telefono ?? null,
+          correo: proxyAuthEmail
         });
 
         if (!perfilRes.success) throw new Error(`Error de perfil de apoderado: ${perfilRes.error}`);
@@ -700,12 +764,16 @@ const RegisterModal = ({ isOpen, onClose }) => {
           dni: proxyDniClean,
           genero: finalProxyData.genero,
           fecha_nacimiento: finalProxyData.fechaNacimiento,
-          direccion: finalPatientData.direccion,
-          telefono: finalProxyData.telefono,
-          correo: finalProxyData.correoReal,
-          nombres: finalProxyData.nombres,
-          apellido_paterno: finalProxyData.apellidoPaterno,
-          apellido_materno: finalProxyData.apellidoMaterno,
+          direccion: finalPatientData.direccion ?? null,
+          telefono: finalProxyData.telefono ?? null,
+          correo: finalProxyData.correoReal ?? null,
+          nombres: finalProxyData.nombres ?? null,
+          apellido_paterno: finalProxyData.apellidoPaterno ?? null,
+          apellido_materno: finalProxyData.apellidoMaterno ?? null,
+          pais: finalPatientData.pais ?? null,
+          departamento: finalPatientData.pais === 'Perú' ? (finalPatientData.departamento ?? null) : null,
+          provincia: finalPatientData.pais === 'Perú' ? (finalPatientData.provincia ?? null) : null,
+          distrito: finalPatientData.pais === 'Perú' ? (finalPatientData.distrito ?? null) : null,
           estado_cuenta: 'INDEPENDIENTE',
           id_perfil_propio: authId,
           id_apoderado: null,
@@ -719,24 +787,24 @@ const RegisterModal = ({ isOpen, onClose }) => {
           dni: patientDniClean,
           genero: finalPatientData.genero,
           fecha_nacimiento: finalPatientData.fechaNacimiento,
-          lugar_familia: finalPatientData.lugarFamilia || null,
-          estado_civil: finalPatientData.estadoCivil || null,
-          grado_instruccion: finalPatientData.gradoInstruccion || null,
-          ocupacion: finalPatientData.ocupacion || null,
-          direccion: finalPatientData.direccion,
-          telefono: finalProxyData.telefono,
+          lugar_familia: finalPatientData.lugarFamilia ?? null,
+          estado_civil: finalPatientData.estadoCivil ?? null,
+          grado_instruccion: finalPatientData.gradoInstruccion ?? null,
+          ocupacion: finalPatientData.ocupacion ?? null,
+          direccion: finalPatientData.direccion ?? null,
+          telefono: finalProxyData.telefono ?? null,
           correo: null,
-          nombres: finalPatientData.nombres,
-          apellido_paterno: finalPatientData.apellidoPaterno,
-          apellido_materno: finalPatientData.apellidoMaterno,
-          pais: finalPatientData.pais,
-          departamento: finalPatientData.pais === 'Perú' ? finalPatientData.departamento : null,
-          provincia: finalPatientData.pais === 'Perú' ? finalPatientData.provincia : null,
-          distrito: finalPatientData.pais === 'Perú' ? finalPatientData.distrito : null,
+          nombres: finalPatientData.nombres ?? null,
+          apellido_paterno: finalPatientData.apellidoPaterno ?? null,
+          apellido_materno: finalPatientData.apellidoMaterno ?? null,
+          pais: finalPatientData.pais ?? null,
+          departamento: finalPatientData.pais === 'Perú' ? (finalPatientData.departamento ?? null) : null,
+          provincia: finalPatientData.pais === 'Perú' ? (finalPatientData.provincia ?? null) : null,
+          distrito: finalPatientData.pais === 'Perú' ? (finalPatientData.distrito ?? null) : null,
           estado_cuenta: 'STANDBY',
           id_perfil_propio: null,
           id_apoderado: authId,
-          parentesco: finalProxyData.parentesco
+          parentesco: finalProxyData.parentesco ?? null
         });
 
         if (!pacienteRes.success) throw new Error(`Error de paciente dependiente: ${pacienteRes.error}`);
@@ -1097,42 +1165,42 @@ const RegisterModal = ({ isOpen, onClose }) => {
                     </div>
                   </div>
 
-                  {/* Fila 8: Correo Electrónico, Celular */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                        {isProxy ? "Correo (no necesario)" : "Correo electrónico *"}
-                      </label>
+                  {/* Fila 8: Correo Electrónico y Celular */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                      {isProxy ? "Correo (no necesario)" : "Correo electrónico *"}
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="ejemplo@correo.com"
+                      value={patientData.correoReal}
+                      onChange={(e) => handlePatientChange('correoReal', e.target.value)}
+                      disabled={isProxy}
+                      required={!isProxy}
+                      className={`w-full px-4 border rounded-2xl outline-none text-sm h-[54px] focus:border-[#003178] transition-colors ${
+                        isProxy ? 'bg-gray-200 text-gray-400 cursor-not-allowed border-gray-200' : 'bg-blue-50/50 border-gray-200'
+                      }`}
+                    />
+                    {!isProxy && (
+                      <p className="text-[10px] text-gray-400 mt-1 ml-2 leading-tight">
+                        Se usará para notificaciones. El acceso será con tu DNI.
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                      {isProxy ? "Celular (no necesario)" : "Celular *"}
+                    </label>
+                    {isProxy ? (
                       <input
-                        type="email"
-                        placeholder="ejemplo@correo.com"
-                        value={patientData.correoReal}
-                        onChange={(e) => handlePatientChange('correoReal', e.target.value)}
-                        disabled={isProxy}
-                        required={!isProxy}
-                        className={`w-full px-4 border rounded-2xl outline-none text-sm h-[54px] focus:border-[#003178] transition-colors ${
-                          isProxy ? 'bg-gray-200 text-gray-400 cursor-not-allowed border-gray-200' : 'bg-blue-50/50 border-gray-200'
-                        }`}
+                        disabled
+                        type="text"
+                        placeholder="Celular (no necesario)"
+                        className="w-full px-4 bg-gray-200 border border-gray-200 rounded-2xl outline-none text-sm text-gray-400 cursor-not-allowed h-[54px]"
                       />
-                      {!isProxy && (
-                        <p className="text-[10px] text-gray-400 mt-1 ml-2 leading-tight">
-                          Se usará para notificaciones. El acceso será con tu DNI.
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                        {isProxy ? "Celular (no necesario)" : "Celular *"}
-                      </label>
-                      {isProxy ? (
-                        <input
-                          disabled
-                          type="text"
-                          placeholder="Celular (no necesario)"
-                          className="w-full px-4 bg-gray-200 border border-gray-200 rounded-2xl outline-none text-sm text-gray-400 cursor-not-allowed h-[54px]"
-                        />
-                      ) : (
-                        <div className="flex flex-col gap-2 w-full">
+                    ) : (
+                      <div className="flex gap-2 w-full">
+                        <div className="w-28 shrink-0">
                           <ComboBox
                             options={phoneOptions}
                             value={patientPhonePrefix}
@@ -1140,19 +1208,22 @@ const RegisterModal = ({ isOpen, onClose }) => {
                             searchable
                             placeholder="+51"
                           />
-                          <input
-                            required
-                            type="text"
-                            inputMode="numeric"
-                            value={patientPhoneNumber}
-                            onChange={e => setPatientPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 9))}
-                            placeholder="Número de celular"
-                            className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px]"
-                            maxLength={9}
-                          />
                         </div>
-                      )}
-                    </div>
+                        <input
+                          required
+                          type="text"
+                          inputMode="numeric"
+                          value={patientPhoneNumber}
+                          onChange={e => {
+                            const val = e.target.value.replace(/\D/g, '');
+                            setPatientPhoneNumber(val.slice(0, 15));
+                          }}
+                          placeholder="Número de celular"
+                          className="flex-1 px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px]"
+                          maxLength={15}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1279,24 +1350,24 @@ const RegisterModal = ({ isOpen, onClose }) => {
                     </div>
                   </div>
 
-                  {/* Fila 4: Correo Electrónico, Celular */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Correo Electrónico *</label>
-                      <input
-                        required={isProxy}
-                        disabled={!isProxy}
-                        type="email"
-                        placeholder="ejemplo@correo.com"
-                        value={proxyData.correoReal}
-                        onChange={(e) => handleProxyChange('correoReal', e.target.value)}
-                        className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-700 focus:border-[#003178] transition-colors h-[54px] disabled:opacity-50"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Celular *</label>
-                      {isProxy ? (
-                        <div className="flex flex-col gap-2 w-full">
+                  {/* Fila 4: Correo Electrónico y Celular */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Correo Electrónico *</label>
+                    <input
+                      required={isProxy}
+                      disabled={!isProxy}
+                      type="email"
+                      placeholder="ejemplo@correo.com"
+                      value={proxyData.correoReal}
+                      onChange={(e) => handleProxyChange('correoReal', e.target.value)}
+                      className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-700 focus:border-[#003178] transition-colors h-[54px] disabled:opacity-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Celular *</label>
+                    {isProxy ? (
+                      <div className="flex gap-2 w-full">
+                        <div className="w-28 shrink-0">
                           <ComboBox
                             options={phoneOptions}
                             value={proxyPhonePrefix}
@@ -1304,27 +1375,30 @@ const RegisterModal = ({ isOpen, onClose }) => {
                             searchable
                             placeholder="+51"
                           />
-                          <input
-                            required={isProxy}
-                            disabled={!isProxy}
-                            type="text"
-                            inputMode="numeric"
-                            value={proxyPhoneNumber}
-                            onChange={e => setProxyPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 9))}
-                            placeholder="Número de celular"
-                            className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px]"
-                            maxLength={9}
-                          />
                         </div>
-                      ) : (
                         <input
-                          disabled
+                          required={isProxy}
+                          disabled={!isProxy}
                           type="text"
-                          placeholder="Celular"
-                          className="w-full px-4 bg-gray-200 border border-gray-200 rounded-2xl outline-none text-sm text-gray-400 cursor-not-allowed h-[54px]"
+                          inputMode="numeric"
+                          value={proxyPhoneNumber}
+                          onChange={e => {
+                            const val = e.target.value.replace(/\D/g, '');
+                            setProxyPhoneNumber(val.slice(0, 15));
+                          }}
+                          placeholder="Número de celular"
+                          className="flex-1 px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px]"
+                          maxLength={15}
                         />
-                      )}
-                    </div>
+                      </div>
+                    ) : (
+                      <input
+                        disabled
+                        type="text"
+                        placeholder="Celular"
+                        className="w-full px-4 bg-gray-200 border border-gray-200 rounded-2xl outline-none text-sm text-gray-400 cursor-not-allowed h-[54px]"
+                      />
+                    )}
                   </div>
                 </div>
               </div>

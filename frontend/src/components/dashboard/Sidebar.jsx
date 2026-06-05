@@ -6,7 +6,7 @@ const menuItems = [
   { id: 'dashboard', icon: 'dashboard', label: 'Dashboard', path: '/dashboard' },
   { id: 'appointments', icon: 'calendar_today', label: 'Mis Citas', path: '/dashboard/appointments' },
   { id: 'documents', icon: 'description', label: 'Documentos', path: '/dashboard/documents' },
-  { id: 'family', icon: 'groups', label: 'Perfiles', path: '/dashboard/family' },
+  { id: 'family', icon: 'groups', label: 'Miembros', path: '/dashboard/family' },
   { id: 'profile', icon: 'account_circle', label: 'Perfil', path: '/dashboard/profile' },
 ];
 

@@ -192,40 +192,55 @@ const Profile = ({ onNavigate }) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No autenticado');
 
+      // Validar celular si se ingresó
+      if (phoneNumber) {
+        const digits = phoneNumber.replace(/\D/g, '');
+        if (phonePrefix === '+51') {
+          if (digits.length !== 9) {
+            throw new Error('El celular para Perú (+51) debe tener exactamente 9 dígitos.');
+          }
+        } else {
+          if (digits.length < 5 || digits.length > 15) {
+            throw new Error('El celular debe tener entre 5 y 15 dígitos.');
+          }
+        }
+      }
+
       const telefonoCompleto = phoneNumber ? `${phonePrefix} ${phoneNumber.trim()}`.trim() : null;
 
-      // Buscar si existe un registro en pacientes con el mismo DNI
+      // Buscar si existe un registro en pacientes con id_perfil_propio = user.id
       const { data: pacienteExistente, error: pacienteExistenteError } = await supabase
         .from('pacientes')
         .select('*')
-        .eq('dni', perfilUsuario.dni)
+        .eq('id_perfil_propio', user.id)
         .maybeSingle();
 
       if (pacienteExistenteError) {
-        throw new Error(`Error al verificar DNI en pacientes: ${pacienteExistenteError.message}`);
-      }
-
-      if (pacienteExistente && pacienteExistente.id_perfil_propio && pacienteExistente.id_perfil_propio !== user.id) {
-        throw new Error('Ya existe un perfil registrado con este DNI.');
+        throw new Error(`Error al verificar ficha clínica en pacientes: ${pacienteExistenteError.message}`);
       }
 
       const pacienteIdToUpdate = perfilClinicoPropio?.id_paciente || pacienteExistente?.id_paciente;
 
       if (pacienteIdToUpdate) {
         // --- CASO: ACTUALIZAR REGISTRO CLÍNICO EXISTENTE ---
+        // Validar campos obligatorios para actualización
+        if (!clinicalData.genero) throw new Error('El género es obligatorio.');
+        if (!clinicalData.direccion) throw new Error('La dirección es obligatoria.');
+        if (!clinicalData.pais) throw new Error('El país es obligatorio.');
+
         const res = await actualizarPaciente(pacienteIdToUpdate, {
           genero: clinicalData.genero,
-          direccion: clinicalData.direccion,
-          pais: clinicalData.pais,
-          departamento: clinicalData.pais === 'Perú' ? clinicalData.departamento : null,
-          provincia: clinicalData.pais === 'Perú' ? clinicalData.provincia : null,
-          distrito: clinicalData.pais === 'Perú' ? clinicalData.distrito : null,
-          lugar_familia: clinicalData.lugar_familia || null,
-          estado_civil: clinicalData.estado_civil || null,
-          grado_instruccion: clinicalData.grado_instruccion || null,
-          ocupacion: clinicalData.ocupacion || null,
-          telefono: telefonoCompleto,
-          correo: clinicalData.correo || null,
+          direccion: clinicalData.direccion ?? null,
+          pais: clinicalData.pais ?? null,
+          departamento: clinicalData.pais === 'Perú' ? (clinicalData.departamento ?? null) : null,
+          provincia: clinicalData.pais === 'Perú' ? (clinicalData.provincia ?? null) : null,
+          distrito: clinicalData.pais === 'Perú' ? (clinicalData.distrito ?? null) : null,
+          lugar_familia: clinicalData.lugar_familia ?? null,
+          estado_civil: clinicalData.estado_civil ?? null,
+          grado_instruccion: clinicalData.grado_instruccion ?? null,
+          ocupacion: clinicalData.ocupacion ?? null,
+          telefono: telefonoCompleto ?? null,
+          correo: clinicalData.correo ?? null,
           id_perfil_propio: user.id
         });
 
@@ -239,25 +254,36 @@ const Profile = ({ onNavigate }) => {
           ultimoHC
         );
 
+        // Validar obligatorios antes de insertar
+        if (!numeroHC) throw new Error('Error al generar la Historia Clínica.');
+        if (!perfilUsuario.dni) throw new Error('El DNI del usuario es obligatorio.');
+        if (!perfilUsuario.nombres) throw new Error('Los nombres del usuario son obligatorios.');
+        if (!perfilUsuario.apellido_paterno) throw new Error('El apellido paterno del usuario es obligatorio.');
+        if (!perfilUsuario.apellido_materno) throw new Error('El apellido materno del usuario es obligatorio.');
+        if (!perfilUsuario.fecha_nacimiento) throw new Error('La fecha de nacimiento del usuario es obligatoria.');
+        if (!clinicalData.genero) throw new Error('El género es obligatorio.');
+        if (!clinicalData.direccion) throw new Error('La dirección es obligatoria.');
+        if (!clinicalData.pais) throw new Error('El país es obligatorio.');
+
         const res = await registrarPaciente({
           numero_hc: numeroHC,
           dni: perfilUsuario.dni,
-          nombres: perfilUsuario.nombres,
-          apellido_paterno: perfilUsuario.apellido_paterno,
-          apellido_materno: perfilUsuario.apellido_materno,
+          nombres: perfilUsuario.nombres ?? null,
+          apellido_paterno: perfilUsuario.apellido_paterno ?? null,
+          apellido_materno: perfilUsuario.apellido_materno ?? null,
           fecha_nacimiento: perfilUsuario.fecha_nacimiento,
           genero: clinicalData.genero,
-          direccion: clinicalData.direccion,
-          pais: clinicalData.pais,
-          departamento: clinicalData.pais === 'Perú' ? clinicalData.departamento : null,
-          provincia: clinicalData.pais === 'Perú' ? clinicalData.provincia : null,
-          distrito: clinicalData.pais === 'Perú' ? clinicalData.distrito : null,
-          lugar_familia: clinicalData.lugar_familia || null,
-          estado_civil: clinicalData.estado_civil || null,
-          grado_instruccion: clinicalData.grado_instruccion || null,
-          ocupacion: clinicalData.ocupacion || null,
-          telefono: telefonoCompleto,
-          correo: clinicalData.correo || null,
+          direccion: clinicalData.direccion ?? null,
+          pais: clinicalData.pais ?? null,
+          departamento: clinicalData.pais === 'Perú' ? (clinicalData.departamento ?? null) : null,
+          provincia: clinicalData.pais === 'Perú' ? (clinicalData.provincia ?? null) : null,
+          distrito: clinicalData.pais === 'Perú' ? (clinicalData.distrito ?? null) : null,
+          lugar_familia: clinicalData.lugar_familia ?? null,
+          estado_civil: clinicalData.estado_civil ?? null,
+          grado_instruccion: clinicalData.grado_instruccion ?? null,
+          ocupacion: clinicalData.ocupacion ?? null,
+          telefono: telefonoCompleto ?? null,
+          correo: clinicalData.correo ?? null,
           estado_cuenta: 'INDEPENDIENTE',
           id_perfil_propio: user.id,
           id_apoderado: null
@@ -626,7 +652,11 @@ const Profile = ({ onNavigate }) => {
                           <input
                             type="text"
                             value={phoneNumber}
-                            onChange={e => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 9))}
+                            onChange={e => {
+                              const val = e.target.value.replace(/\D/g, '');
+                              setPhoneNumber(val.slice(0, 15));
+                            }}
+                            maxLength={15}
                             placeholder="Celular"
                             className="flex-1 p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none"
                           />

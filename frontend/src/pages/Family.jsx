@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { usePacienteActual } from '../hooks/usePacienteActual';
 import { registrarPaciente, obtenerUltimoNumeroHC } from '../utils/supabaseHelpers';
@@ -26,6 +26,16 @@ const Family = ({ onNavigate }) => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+
+  useEffect(() => {
+    if (isAddModalOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isAddModalOpen]);
 
   // Paso del wizard en el modal
   const [wizardStep, setWizardStep] = useState(1);
@@ -190,16 +200,6 @@ const Family = ({ onNavigate }) => {
         return 'Completa todos los campos obligatorios (*): Vínculo, Lugar en la familia, Estado civil, Grado de instrucción y Ocupación.';
       }
     }
-    if (stepNum === 4) {
-      if (!esMenor) {
-        if (!phoneNumber) {
-          return 'El celular es obligatorio para mayores de edad.';
-        }
-        if (!newProfile.correo || !newProfile.correo.includes('@')) {
-          return 'El correo electrónico es obligatorio y debe ser válido.';
-        }
-      }
-    }
     return '';
   };
 
@@ -223,7 +223,7 @@ const Family = ({ onNavigate }) => {
     setSubmitError('');
 
     // Validar todos los pasos
-    for (let i = 1; i <= 4; i++) {
+    for (let i = 1; i <= 3; i++) {
       const err = validateStep(i);
       if (err) {
         setSubmitError(`Paso ${i}: ${err}`);
@@ -259,32 +259,30 @@ const Family = ({ onNavigate }) => {
         ultimoHC
       );
 
-      const telefonoCompleto = phoneNumber ? `${phonePrefix} ${phoneNumber.trim()}`.trim() : null;
-
       // 4. Registrar en la tabla pacientes
       const res = await registrarPaciente({
-        numero_hc: numeroHC,
-        dni: newProfile.dni,
-        nombres: newProfile.nombres,
-        apellido_paterno: newProfile.apellidoPaterno,
-        apellido_materno: newProfile.apellidoMaterno,
-        fecha_nacimiento: newProfile.fechaNacimiento,
-        genero: newProfile.genero,
-        direccion: newProfile.direccion,
-        parentesco: newProfile.parentesco,
+        numero_hc: numeroHC ?? null,
+        dni: newProfile.dni ?? null,
+        nombres: newProfile.nombres ?? null,
+        apellido_paterno: newProfile.apellidoPaterno ?? null,
+        apellido_materno: newProfile.apellidoMaterno ?? null,
+        fecha_nacimiento: newProfile.fechaNacimiento ?? null,
+        genero: newProfile.genero ?? null,
+        direccion: newProfile.direccion ?? null,
+        parentesco: newProfile.parentesco ?? null,
         estado_cuenta: 'STANDBY',
         id_perfil_propio: null,
-        id_apoderado: user.id,
-        pais: newProfile.pais,
-        departamento: newProfile.pais === 'Perú' ? newProfile.departamento : null,
-        provincia: newProfile.pais === 'Perú' ? newProfile.provincia : null,
-        distrito: newProfile.pais === 'Perú' ? newProfile.distrito : null,
-        lugar_familia: newProfile.lugarFamilia || null,
-        estado_civil: newProfile.estadoCivil || null,
-        grado_instruccion: newProfile.gradoInstruccion || null,
-        ocupacion: newProfile.ocupacion || null,
-        telefono: telefonoCompleto,
-        correo: newProfile.correo || null
+        id_apoderado: user.id ?? null,
+        pais: newProfile.pais ?? null,
+        departamento: newProfile.pais === 'Perú' ? newProfile.departamento ?? null : null,
+        provincia: newProfile.pais === 'Perú' ? newProfile.provincia ?? null : null,
+        distrito: newProfile.pais === 'Perú' ? newProfile.distrito ?? null : null,
+        lugar_familia: newProfile.lugarFamilia ?? null,
+        estado_civil: newProfile.estadoCivil ?? null,
+        grado_instruccion: newProfile.gradoInstruccion ?? null,
+        ocupacion: newProfile.ocupacion ?? null,
+        telefono: null,
+        correo: null
       });
 
       if (!res.success) {
@@ -322,9 +320,9 @@ const Family = ({ onNavigate }) => {
       {/* Encabezado de página */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
         <div>
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Perfiles de la Cuenta</h2>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">Miembros de la Cuenta</h2>
           <p className="text-gray-500 text-lg max-w-2xl">
-            Gestiona los perfiles clínicos de tus hijos, familiares o dependientes para agendar sus citas.
+            Gestiona los miembros clínicos de tus hijos, familiares o dependientes para agendar sus citas.
           </p>
         </div>
         <button
@@ -332,14 +330,14 @@ const Family = ({ onNavigate }) => {
           className="bg-[#003178] text-white rounded-lg px-5 py-2.5 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-blue-900 transition-all shadow-sm active:scale-[0.98] shrink-0 cursor-pointer"
         >
           <span className="material-symbols-outlined text-[18px]">person_add</span>
-          Agregar Perfil
+          Agregar Miembro
         </button>
       </div>
 
       {loading ? (
         <div className="flex justify-center items-center py-20">
           <div className="w-10 h-10 border-4 border-[#003178] border-t-transparent rounded-full animate-spin"></div>
-          <span className="ml-3 text-gray-600">Cargando perfiles...</span>
+          <span className="ml-3 text-gray-600">Cargando miembros...</span>
         </div>
       ) : (
         <>
@@ -348,14 +346,14 @@ const Family = ({ onNavigate }) => {
             <div className="bg-white border border-gray-200 rounded-xl p-4 mb-8 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-4">
               <label className="font-semibold text-sm text-gray-700 flex items-center gap-2">
                 <span className="material-symbols-outlined text-gray-400 text-[18px]">filter_list</span>
-                Filtrar perfiles:
+                Filtrar miembros:
               </label>
               <select
                 className="bg-gray-50 border border-gray-200 rounded-md px-4 py-2 text-sm text-gray-700 focus:border-[#003178] focus:ring-1 focus:ring-[#003178] outline-none transition-colors w-full sm:w-auto min-w-[200px]"
                 value={filterRelative}
                 onChange={(e) => setFilterRelative(e.target.value)}
               >
-                <option value="all">Todos los perfiles dependientes</option>
+                <option value="all">Todos los miembros dependientes</option>
                 {perfilesDependientes.map(r => (
                   <option key={r.id_paciente} value={r.id_paciente}>
                     {r.nombres} {r.apellido_paterno} ({r.parentesco})
@@ -365,20 +363,20 @@ const Family = ({ onNavigate }) => {
             </div>
           )}
 
-          {/* Cuadrícula de perfiles */}
+          {/* Cuadrícula de miembros */}
           {filteredRelatives.length === 0 ? (
             <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center shadow-sm">
               <span className="material-symbols-outlined text-gray-300 text-6xl mb-4">groups</span>
-              <h3 className="text-xl font-bold text-gray-900 mb-1">Sin perfiles dependientes</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-1">Sin miembros dependientes</h3>
               <p className="text-gray-500 mb-6 max-w-sm mx-auto text-sm">
-                Aún no has registrado perfiles para tus familiares. Puedes agregar hijos o personas a tu cargo para agendar sus citas.
+                Aún no has registrado miembros para tus familiares. Puedes agregar hijos o personas a tu cargo para agendar sus citas.
               </p>
               <button
                 onClick={handleOpenAddModal}
                 className="inline-flex items-center gap-2 bg-[#003178] hover:bg-blue-900 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-all cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[18px]">person_add</span>
-                Crear Primer Perfil
+                Crear Primer Miembro
               </button>
             </div>
           ) : (
@@ -444,7 +442,7 @@ const Family = ({ onNavigate }) => {
 
             <header className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
               <div>
-                <h3 className="text-xl font-bold text-gray-900">Agregar Perfil Dependiente</h3>
+                <h3 className="text-xl font-bold text-gray-900">Agregar Miembro Dependiente</h3>
                 <p className="text-xs text-gray-500">Crea una ficha clínica para un familiar</p>
               </div>
               <button
@@ -460,8 +458,7 @@ const Family = ({ onNavigate }) => {
               {[
                 { step: 1, label: 'Personales' },
                 { step: 2, label: 'Ubicación' },
-                { step: 3, label: 'Familiar/Lab' },
-                { step: 4, label: 'Contacto' }
+                { step: 3, label: 'Familiar/Lab' }
               ].map(s => {
                 const active = wizardStep === s.step;
                 const completed = wizardStep > s.step;
@@ -767,55 +764,6 @@ const Family = ({ onNavigate }) => {
                 </div>
               )}
 
-              {/* Paso 4: Contacto */}
-              {wizardStep === 4 && (
-                <div className="space-y-4">
-                  <h4 className="font-bold text-xs text-[#003178] uppercase tracking-wider border-b pb-1">4. Datos de Contacto</h4>
-                  
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                      Celular / Teléfono {!esMenor && '*'}
-                    </label>
-                    <div className="flex gap-2">
-                      <select
-                        value={phonePrefix}
-                        onChange={e => setPhonePrefix(e.target.value)}
-                        className="p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none bg-gray-50 text-gray-700 w-28 shrink-0"
-                      >
-                        {countries.map(c => (
-                          <option key={c.iso2} value={`+${c.phoneCode}`}>
-                            {getFlagEmoji(c.iso2)} +{c.phoneCode}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={phoneNumber}
-                        onChange={handlePhoneChange}
-                        placeholder="999888777"
-                        className="flex-1 p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none"
-                        required={!esMenor}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                      Correo Electrónico de Contacto {!esMenor && '*'}
-                    </label>
-                    <input
-                      type="email"
-                      value={newProfile.correo}
-                      onChange={e => handleChange('correo', e.target.value)}
-                      placeholder="ejemplo@correo.com"
-                      className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none"
-                      required={!esMenor}
-                    />
-                  </div>
-                </div>
-              )}
-
               <footer className="pt-4 border-t border-gray-100 flex justify-between bg-white sticky bottom-0">
                 {wizardStep > 1 ? (
                   <button
@@ -835,7 +783,7 @@ const Family = ({ onNavigate }) => {
                   </button>
                 )}
 
-                {wizardStep < 4 ? (
+                {wizardStep < 3 ? (
                   <button
                     type="button"
                     onClick={handleNext}
@@ -849,7 +797,7 @@ const Family = ({ onNavigate }) => {
                     disabled={isSubmitting}
                     className="px-5 py-2 bg-[#003178] hover:bg-blue-900 text-white font-semibold text-sm rounded-xl transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                   >
-                    {isSubmitting ? 'Registrando...' : 'Registrar Perfil'}
+                    {isSubmitting ? 'Registrando...' : 'Registrar Miembro'}
                   </button>
                 )}
               </footer>

@@ -9,6 +9,7 @@ export const usePacienteActual = () => {
   const [perfilesDependientes, setPerfilesDependientes] = useState([]); // pacientes table where id_apoderado = user.id
 
   const cargarDatos = useCallback(async (retryCount = 0) => {
+    let isRetrying = false;
     try {
       setError(null);
 
@@ -36,6 +37,7 @@ export const usePacienteActual = () => {
       // Si por retraso de sincronización tras registro no encuentra el perfil, reintentar
       if (!perfilAcc && retryCount < 3) {
         console.log(`Perfil de cuenta no encontrado en Supabase. Reintentando... (${retryCount + 1}/3)`);
+        isRetrying = true;
         setTimeout(() => cargarDatos(retryCount + 1), 1000);
         return;
       }
@@ -70,6 +72,7 @@ export const usePacienteActual = () => {
           setError("No se encontró tu perfil de paciente");
         } else {
           // Reintentar una vez más
+          isRetrying = true;
           setTimeout(() => cargarDatos(retryCount + 1), 1000);
           return;
         }
@@ -82,7 +85,9 @@ export const usePacienteActual = () => {
         setError(err.message || "Error al cargar los perfiles");
       }
     } finally {
-      setLoading(false);
+      if (!isRetrying) {
+        setLoading(false);
+      }
     }
   }, []);
 
