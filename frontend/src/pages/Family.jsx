@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { usePacienteActual } from '../hooks/usePacienteActual';
 import { registrarPaciente, obtenerUltimoNumeroHC } from '../utils/supabaseHelpers';
@@ -11,6 +13,233 @@ import departamentos from '../data/ubigeo_peru_2016_departamentos.json';
 import provincias from '../data/ubigeo_peru_2016_provincias.json';
 import distritos from '../data/ubigeo_peru_2016_distritos.json';
 
+const toTitleCase = (value) => {
+  if (!value) return value;
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/\b\p{L}/gu, char => char.toUpperCase());
+};
+
+const FlagImage = ({ iso2, className = "w-5 h-3.5 object-cover rounded-sm border border-gray-200 shrink-0" }) => {
+  const [hasError, setHasError] = useState(false);
+  
+  if (!iso2) {
+    return <span className="text-base leading-none select-none">🌐</span>;
+  }
+  
+  if (hasError) {
+    const emoji = getFlagEmoji(iso2);
+    return <span className="text-base leading-none select-none">{emoji || '🌐'}</span>;
+  }
+  
+  const flagUrl = `https://purecatamphetamine.github.io/country-flag-icons/3x2/${iso2.toUpperCase()}.svg`;
+  return (
+    <img
+      src={flagUrl}
+      alt={iso2}
+      onError={() => setHasError(true)}
+      className={className}
+    />
+  );
+};
+
+const ComboBox = ({
+  options,
+  value,
+  onChange,
+  placeholder = 'Seleccione...',
+  searchable = false,
+  required = false,
+  disabled = false,
+  className = '',
+  id
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const triggerRef = useRef(null);
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
+
+  const selectedOption = options.find(opt => {
+    if (typeof opt === 'object') {
+      return opt.value === value;
+    }
+    return opt === value;
+  });
+
+  const getOptionLabel = (opt) => {
+    if (!opt) return '';
+    return typeof opt === 'object' ? opt.label : opt;
+  };
+
+  const getOptionValue = (opt) => {
+    if (!opt) return '';
+    return typeof opt === 'object' ? opt.value : opt;
+  };
+
+  const filteredOptions = searchable && search.trim() !== ''
+    ? options.filter(opt => {
+        if (typeof opt === 'object') {
+          const label = opt.label.toLowerCase();
+          const searchKey = opt.searchKey ? opt.searchKey.toLowerCase() : '';
+          return label.includes(search.toLowerCase()) || searchKey.includes(search.toLowerCase());
+        }
+        return opt.toLowerCase().includes(search.toLowerCase());
+      })
+    : options;
+
+  const handleSelect = (opt) => {
+    onChange(getOptionValue(opt));
+    setIsOpen(false);
+    setSearch('');
+  };
+
+  const updateCoords = () => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      const scrollX = window.scrollX;
+      const scrollY = window.scrollY;
+      const windowWidth = window.innerWidth;
+      const estimatedWidth = Math.max(rect.width, Math.min(360, windowWidth * 0.9));
+      
+      let left = rect.left + scrollX;
+      if (rect.left + estimatedWidth > windowWidth) {
+        left = windowWidth - estimatedWidth - 16 + scrollX;
+      }
+      if (left < scrollX + 10) {
+        left = scrollX + 10;
+      }
+
+      setCoords({
+        top: rect.bottom + scrollY,
+        left,
+        width: rect.width
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      updateCoords();
+      window.addEventListener('resize', updateCoords);
+      window.addEventListener('scroll', updateCoords, true);
+      return () => {
+        window.removeEventListener('resize', updateCoords);
+        window.removeEventListener('scroll', updateCoords, true);
+      };
+    }
+  }, [isOpen]);
+
+  return (
+    <div className={`relative w-full ${isOpen ? 'z-[50]' : 'z-10'} ${className}`} id={id}>
+      <div
+        ref={triggerRef}
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        className={`w-full px-4 bg-gray-50 border rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px] flex items-center justify-between cursor-pointer select-none ${
+          disabled ? 'opacity-50 cursor-not-allowed bg-gray-200 text-gray-400 border-gray-200' : 'border-gray-200 hover:border-gray-300'
+        } ${isOpen ? 'border-[#003178] ring-1 ring-[#003178]/10' : ''}`}
+      >
+        <div className="flex items-center gap-2 truncate">
+          {selectedOption ? (
+            <>
+              {typeof selectedOption === 'object' && selectedOption.flag && (
+                <span className="inline-flex items-center shrink-0">
+                  {selectedOption.flag}
+                </span>
+              )}
+              <span className="truncate">{getOptionLabel(selectedOption)}</span>
+            </>
+          ) : (
+            <span className="text-gray-400 font-normal">{placeholder}</span>
+          )}
+        </div>
+        <span className="material-symbols-outlined text-gray-400 select-none" style={{ transform: isOpen ? 'rotate(180deg)' : 'none' }}>
+          expand_more
+        </span>
+      </div>
+
+      {required && (
+        <input
+          type="text"
+          value={value || ''}
+          onChange={() => {}}
+          required
+          className="absolute inset-x-0 bottom-0 h-0 opacity-0 pointer-events-none"
+        />
+      )}
+
+      {isOpen && createPortal(
+        <>
+          <div className="fixed inset-0 z-[99998]" onClick={() => { setIsOpen(false); setSearch(''); }} />
+          <div
+            style={{
+              position: 'absolute',
+              top: `${coords.top}px`,
+              left: `${coords.left}px`,
+              minWidth: `${coords.width}px`,
+              width: 'max-content',
+              maxWidth: 'min(360px, 90vw)'
+            }}
+            className="bg-white border border-gray-200 rounded-2xl shadow-xl z-[99999] overflow-hidden flex flex-col max-h-64"
+          >
+            {searchable && (
+              <div className="p-2 border-b border-gray-100 bg-gray-50/50 sticky top-0 z-10 flex items-center gap-2">
+                <span className="material-symbols-outlined text-gray-400 text-lg ml-2 select-none">search</span>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar..."
+                  className="w-full bg-transparent outline-none text-sm text-gray-700 py-1"
+                  autoFocus
+                />
+                {search && (
+                  <button type="button" onClick={() => setSearch('')} className="text-gray-400 hover:text-gray-650 px-1">
+                    <span className="material-symbols-outlined text-base">close</span>
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="overflow-y-auto flex-1 py-1 max-h-48">
+              {filteredOptions.length > 0 ? (
+                filteredOptions.map((opt, idx) => {
+                  const optVal = getOptionValue(opt);
+                  const optLabel = getOptionLabel(opt);
+                  const isSelected = optVal === value;
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => handleSelect(opt)}
+                      className={`px-4 py-3 hover:bg-gray-50 text-sm cursor-pointer transition-colors flex items-center justify-between gap-3 ${
+                        isSelected ? 'bg-blue-50/50 text-[#003178] font-bold' : 'text-gray-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
+                        {typeof opt === 'object' && opt.flag && (
+                          <span className="inline-flex items-center shrink-0">
+                            {opt.flag}
+                          </span>
+                        )}
+                        <span className="whitespace-normal break-words">{optLabel}</span>
+                      </div>
+                      {isSelected && (
+                        <span className="material-symbols-outlined text-[#003178] text-base shrink-0 select-none">check</span>
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="px-4 py-3 text-xs text-gray-450 text-center">No se encontraron resultados</div>
+              )}
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
+    </div>
+  );
+};
+
 const getFlagEmoji = (iso2) => {
   if (!iso2) return '';
   const codePoints = iso2
@@ -20,12 +249,15 @@ const getFlagEmoji = (iso2) => {
   return String.fromCodePoint(...codePoints);
 };
 
-const Family = ({ onNavigate }) => {
+const Family = () => {
   const { loading, perfilesDependientes, refetch } = usePacienteActual();
   const [memberSearch, setMemberSearch] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [selectedMember, setSelectedMember] = useState(null);
+  
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (isAddModalOpen) {
@@ -39,10 +271,6 @@ const Family = ({ onNavigate }) => {
 
   // Paso del wizard en el modal
   const [wizardStep, setWizardStep] = useState(1);
-
-  // Prefijo telefónico separado en UI
-  const [phonePrefix, setPhonePrefix] = useState('+51');
-  const [phoneNumber, setPhoneNumber] = useState('');
 
   // Datos del nuevo perfil dependiente
   const [newProfile, setNewProfile] = useState({
@@ -114,8 +342,6 @@ const Family = ({ onNavigate }) => {
       tipoDocumento: paisDefecto === 'Perú' ? 'DNI' : 'Carnet de extranjería'
     });
 
-    setPhonePrefix('+51');
-    setPhoneNumber('');
     setWizardStep(1);
     setSubmitError('');
     setIsAddModalOpen(true);
@@ -132,11 +358,6 @@ const Family = ({ onNavigate }) => {
     setNewProfile(prev => ({ ...prev, [field]: value }));
   };
 
-  const handlePhoneChange = (e) => {
-    const val = e.target.value.replace(/\D/g, '').slice(0, 9);
-    setPhoneNumber(val);
-  };
-
   const handleCountryChange = (val) => {
     setNewProfile(prev => ({
       ...prev,
@@ -146,12 +367,6 @@ const Family = ({ onNavigate }) => {
       distrito: '',
       tipoDocumento: val === 'Perú' ? 'DNI' : 'Carnet de extranjería'
     }));
-
-    // Sincronizar prefijo de teléfono por defecto para Perú
-    const cObj = countries.find(c => c.nameES === val);
-    if (cObj) {
-      setPhonePrefix(`+${cObj.phoneCode}`);
-    }
   };
 
   const handleDepartmentChange = (deptName) => {
@@ -169,6 +384,16 @@ const Family = ({ onNavigate }) => {
       provincia: provName,
       distrito: ''
     }));
+  };
+
+  const handleVerCitas = (relative) => {
+    const fullName = `${relative.nombres} ${relative.apellido_paterno} ${relative.apellido_materno || ''}`.trim();
+    navigate('/dashboard/appointments', {
+      state: {
+        memberId: relative.id_paciente,
+        memberName: fullName
+      }
+    });
   };
 
 
@@ -263,24 +488,24 @@ const Family = ({ onNavigate }) => {
       const res = await registrarPaciente({
         numero_hc: numeroHC ?? null,
         dni: newProfile.dni ?? null,
-        nombres: newProfile.nombres ?? null,
-        apellido_paterno: newProfile.apellidoPaterno ?? null,
-        apellido_materno: newProfile.apellidoMaterno ?? null,
+        nombres: toTitleCase(newProfile.nombres) ?? null,
+        apellido_paterno: toTitleCase(newProfile.apellidoPaterno) ?? null,
+        apellido_materno: toTitleCase(newProfile.apellidoMaterno) ?? null,
         fecha_nacimiento: newProfile.fechaNacimiento ?? null,
         genero: newProfile.genero ?? null,
-        direccion: newProfile.direccion ?? null,
-        parentesco: newProfile.parentesco ?? null,
+        direccion: toTitleCase(newProfile.direccion) ?? null,
+        parentesco: toTitleCase(newProfile.parentesco) ?? null,
         estado_cuenta: 'STANDBY',
         id_perfil_propio: null,
         id_apoderado: user.id ?? null,
-        pais: newProfile.pais ?? null,
-        departamento: newProfile.pais === 'Perú' ? newProfile.departamento ?? null : null,
-        provincia: newProfile.pais === 'Perú' ? newProfile.provincia ?? null : null,
-        distrito: newProfile.pais === 'Perú' ? newProfile.distrito ?? null : null,
-        lugar_familia: newProfile.lugarFamilia ?? null,
-        estado_civil: newProfile.estadoCivil ?? null,
-        grado_instruccion: newProfile.gradoInstruccion ?? null,
-        ocupacion: newProfile.ocupacion ?? null,
+        pais: toTitleCase(newProfile.pais) ?? null,
+        departamento: newProfile.pais === 'Perú' ? toTitleCase(newProfile.departamento) ?? null : null,
+        provincia: newProfile.pais === 'Perú' ? toTitleCase(newProfile.provincia) ?? null : null,
+        distrito: newProfile.pais === 'Perú' ? toTitleCase(newProfile.distrito) ?? null : null,
+        lugar_familia: toTitleCase(newProfile.lugarFamilia) ?? null,
+        estado_civil: toTitleCase(newProfile.estadoCivil) ?? null,
+        grado_instruccion: toTitleCase(newProfile.gradoInstruccion) ?? null,
+        ocupacion: toTitleCase(newProfile.ocupacion) ?? null,
         telefono: null,
         correo: null
       });
@@ -317,6 +542,13 @@ const Family = ({ onNavigate }) => {
   const provObj = provincias.find(p => p.name === newProfile.provincia && p.department_id === deptId);
   const provId = provObj ? provObj.id : '';
   const filteredDistritos = provId ? distritos.filter(d => d.province_id === provId && d.department_id === deptId) : [];
+
+  const countryOptions = countries.map(c => ({
+    value: c.nameES,
+    label: c.nameES,
+    flag: <FlagImage iso2={c.iso2} />,
+    searchKey: c.nameES
+  }));
 
   return (
     <DashboardLayout currentPath="/dashboard/family font-['Manrope']">
@@ -437,13 +669,22 @@ const Family = ({ onNavigate }) => {
                           <p className="text-sm text-[#003178] font-bold">{relative.numero_hc}</p>
                         </div>
                       </div>
-                      <button
-                        onClick={() => onNavigate('/dashboard/appointments')}
-                        className="w-full bg-white text-gray-700 border border-gray-200 rounded-lg py-2 text-sm font-semibold hover:bg-gray-100 transition-colors flex justify-center items-center gap-2 cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">calendar_month</span>
-                        Ver Citas
-                      </button>
+                      <div className="flex gap-2 w-full mt-auto">
+                        <button
+                          onClick={() => setSelectedMember(relative)}
+                          className="flex-1 bg-white text-gray-700 border border-gray-200 rounded-lg py-2 text-xs font-semibold hover:bg-gray-100 transition-colors flex justify-center items-center gap-1.5 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">visibility</span>
+                          Ver Datos
+                        </button>
+                        <button
+                          onClick={() => handleVerCitas(relative)}
+                          className="flex-1 bg-[#003178] hover:bg-blue-900 text-white rounded-lg py-2 text-xs font-semibold transition-colors flex justify-center items-center gap-1.5 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">calendar_month</span>
+                          Ver Citas
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -622,18 +863,14 @@ const Family = ({ onNavigate }) => {
                   
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">País *</label>
-                    <select
+                    <ComboBox
                       required
+                      searchable
+                      options={countryOptions}
                       value={newProfile.pais}
-                      onChange={e => handleCountryChange(e.target.value)}
-                      className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none text-gray-700 bg-white"
-                    >
-                      {countries.map(c => (
-                        <option key={c.iso2} value={c.nameES}>
-                          {getFlagEmoji(c.iso2)} {c.nameES}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={handleCountryChange}
+                      placeholder="Seleccione país"
+                    />
                   </div>
 
                   <div>
@@ -820,6 +1057,131 @@ const Family = ({ onNavigate }) => {
                 )}
               </footer>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Modal: Ver Datos Clínicos del Miembro */}
+      {selectedMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-white rounded-[2rem] border border-gray-200 shadow-xl overflow-hidden max-w-2xl w-full p-8 md:p-10 animate-fade-in-up max-h-[90vh] flex flex-col">
+            <header className="flex justify-between items-start border-b border-gray-100 pb-4 mb-6 shrink-0">
+              <div>
+                <h3 className="text-2xl font-bold text-[#003178] uppercase tracking-tighter">Ficha Clínica del Miembro</h3>
+                <p className="text-gray-500 font-medium text-xs mt-0.5">Datos registrados para la atención médica</p>
+              </div>
+              <button 
+                onClick={() => setSelectedMember(null)} 
+                className="text-gray-400 hover:text-red-500 transition-colors p-1.5 rounded-full hover:bg-gray-100"
+              >
+                <span className="material-symbols-outlined font-bold">close</span>
+              </button>
+            </header>
+            
+            <div className="overflow-y-auto flex-1 pr-2 space-y-6">
+              {/* Header profile info */}
+              <div className="flex items-center gap-4 p-4 bg-blue-50/50 border border-blue-100 rounded-2xl">
+                <div className="w-14 h-14 rounded-full bg-blue-100 text-[#003178] flex items-center justify-center text-xl font-bold uppercase shrink-0">
+                  {`${selectedMember.nombres?.charAt(0) || ''}${selectedMember.apellido_paterno?.charAt(0) || ''}`}
+                </div>
+                <div>
+                  <h4 className="font-bold text-gray-900 text-lg leading-tight">
+                    {`${selectedMember.nombres} ${selectedMember.apellido_paterno} ${selectedMember.apellido_materno || ''}`.trim()}
+                  </h4>
+                  <p className="text-xs text-[#003178] font-bold mt-1 inline-flex items-center px-2.5 py-0.5 rounded-full bg-white border border-blue-200">
+                    {selectedMember.parentesco || 'Familiar'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Grid of info */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 text-sm">
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Historia Clínica (HC)</p>
+                  <p className="font-bold text-[#003178] mt-1">{selectedMember.numero_hc || 'No registrado'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Documento de Identidad</p>
+                  <p className="font-semibold text-gray-900 mt-1">{selectedMember.dni || 'No registrado'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Fecha de Nacimiento</p>
+                  <p className="font-semibold text-gray-900 mt-1">
+                    {selectedMember.fecha_nacimiento 
+                      ? new Date(selectedMember.fecha_nacimiento + 'T00:00:00').toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' })
+                      : 'No registrado'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Edad</p>
+                  <p className="font-semibold text-gray-900 mt-1">
+                    {selectedMember.fecha_nacimiento ? `${calcularEdad(selectedMember.fecha_nacimiento)} años` : 'No registrado'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Género</p>
+                  <p className="font-semibold text-gray-900 mt-1">{selectedMember.genero || 'No registrado'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Estado Civil</p>
+                  <p className="font-semibold text-gray-900 mt-1">{selectedMember.estado_civil || 'No registrado'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Lugar en Familia</p>
+                  <p className="font-semibold text-gray-900 mt-1">{selectedMember.lugar_familia || 'No registrado'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Grado de Instrucción</p>
+                  <p className="font-semibold text-gray-900 mt-1">{selectedMember.grado_instruccion || 'No registrado'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Ocupación</p>
+                  <p className="font-semibold text-gray-900 mt-1">{selectedMember.ocupacion || 'No registrado'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">País de Residencia</p>
+                  <p className="font-semibold text-gray-900 mt-1">{selectedMember.pais || 'No registrado'}</p>
+                </div>
+                
+                {selectedMember.pais === 'Perú' && (
+                  <div className="col-span-1 md:col-span-2 grid grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Departamento</p>
+                      <p className="font-semibold text-gray-900 mt-1">{selectedMember.departamento || 'No registrado'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Provincia</p>
+                      <p className="font-semibold text-gray-900 mt-1">{selectedMember.provincia || 'No registrado'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Distrito</p>
+                      <p className="font-semibold text-gray-900 mt-1">{selectedMember.distrito || 'No registrado'}</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="col-span-1 md:col-span-2">
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Dirección Completa</p>
+                  <p className="font-semibold text-gray-900 mt-1">{selectedMember.direccion || 'No registrado'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Celular</p>
+                  <p className="font-semibold text-gray-900 mt-1">{selectedMember.telefono || 'No registrado'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Correo Electrónico</p>
+                  <p className="font-semibold text-gray-900 mt-1 truncate">{selectedMember.correo || 'No registrado'}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-8 pt-4 border-t border-gray-100 flex justify-end shrink-0">
+              <button
+                onClick={() => setSelectedMember(null)}
+                className="px-6 py-2.5 bg-[#003178] hover:bg-blue-900 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

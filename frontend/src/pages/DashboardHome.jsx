@@ -95,9 +95,11 @@ const DashboardHome = () => {
 
   const ahora = new Date();
   
+  const ESTADOS_ACTIVOS = ['Pendiente', 'Confirmada', 'Reprogramada'];
+
   // Buscar la cita futura más próxima
   const proximaCita = appointments
-    .filter(cita => new Date(`${cita.fecha_cita}T${cita.hora_inicio}`) > ahora)
+    .filter(cita => new Date(`${cita.fecha_cita}T${cita.hora_inicio}`) > ahora && ESTADOS_ACTIVOS.includes(cita.estado_cita))
     .sort((a, b) => new Date(`${a.fecha_cita}T${a.hora_inicio}`) - new Date(`${b.fecha_cita}T${b.hora_inicio}`))[0];
 
   const getCitaStateBadge = (estado) => {
@@ -209,7 +211,7 @@ const DashboardHome = () => {
               <div className="space-y-1">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Próximas Citas</p>
                 <p className="text-3xl font-bold text-gray-900">
-                  {appointments.filter(cita => new Date(`${cita.fecha_cita}T${cita.hora_inicio}`) > ahora).length}
+                  {appointments.filter(cita => new Date(`${cita.fecha_cita}T${cita.hora_inicio}`) > ahora && ESTADOS_ACTIVOS.includes(cita.estado_cita)).length}
                 </p>
               </div>
               <div className="w-12 h-12 rounded-xl bg-blue-50 text-[#003178] flex items-center justify-center">
@@ -219,7 +221,7 @@ const DashboardHome = () => {
 
             <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm flex items-center justify-between group hover:shadow-md transition-all duration-200">
               <div className="space-y-1">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Documentos Pendientes</p>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Documentos</p>
                 <p className="text-3xl font-bold text-gray-900">{documentsCount}</p>
               </div>
               <div className="w-12 h-12 rounded-xl bg-yellow-50 text-yellow-700 flex items-center justify-center">
@@ -263,7 +265,7 @@ const DashboardHome = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {appointments.filter(cita => new Date(`${cita.fecha_cita}T${cita.hora_inicio}`) > ahora).length === 0 ? (
+                      {appointments.filter(cita => new Date(`${cita.fecha_cita}T${cita.hora_inicio}`) > ahora && ESTADOS_ACTIVOS.includes(cita.estado_cita)).length === 0 ? (
                         <tr>
                           <td colSpan="5" className="text-center py-12 text-slate-400 text-sm">
                             No tienes citas agendadas próximamente.
@@ -271,7 +273,7 @@ const DashboardHome = () => {
                         </tr>
                       ) : (
                         appointments
-                          .filter(cita => new Date(`${cita.fecha_cita}T${cita.hora_inicio}`) > ahora)
+                          .filter(cita => new Date(`${cita.fecha_cita}T${cita.hora_inicio}`) > ahora && ESTADOS_ACTIVOS.includes(cita.estado_cita))
                           .sort((a, b) => new Date(`${a.fecha_cita}T${a.hora_inicio}`) - new Date(`${b.fecha_cita}T${b.hora_inicio}`))
                           .map((cita) => (
                             <tr key={cita.id} className="hover:bg-gray-50/30 transition-colors">

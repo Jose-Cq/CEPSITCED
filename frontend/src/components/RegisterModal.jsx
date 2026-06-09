@@ -11,6 +11,15 @@ import departamentos from '../data/ubigeo_peru_2016_departamentos.json';
 import provincias from '../data/ubigeo_peru_2016_provincias.json';
 import distritos from '../data/ubigeo_peru_2016_distritos.json';
 
+const toTitleCase = (value) => {
+  if (!value) return value;
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/\b\p{L}/gu, char => char.toUpperCase());
+};
+
+
 const getFlagEmoji = (iso2) => {
   if (!iso2) return '';
   const codePoints = iso2
@@ -152,7 +161,7 @@ const ComboBox = ({
             <span className="text-gray-400 font-normal">{placeholder}</span>
           )}
         </div>
-        <span className="material-symbols-outlined text-gray-400 select-none transition-transform duration-200" style={{ transform: isOpen ? 'rotate(180deg)' : 'none' }}>
+        <span className="material-symbols-outlined text-gray-400 select-none" style={{ transform: isOpen ? 'rotate(180deg)' : 'none' }}>
           expand_more
         </span>
       </div>
@@ -179,7 +188,7 @@ const ComboBox = ({
               width: 'max-content',
               maxWidth: 'min(360px, 90vw)'
             }}
-            className="bg-white border border-gray-200 rounded-2xl shadow-xl z-[99999] overflow-hidden flex flex-col max-h-64 animate-in fade-in slide-in-from-top-1 duration-150"
+            className="bg-white border border-gray-200 rounded-2xl shadow-xl z-[99999] overflow-hidden flex flex-col max-h-64"
           >
             {searchable && (
               <div className="p-2 border-b border-gray-100 bg-gray-50/50 sticky top-0 z-10 flex items-center gap-2">
@@ -325,7 +334,11 @@ const RegisterModal = ({ isOpen, onClose }) => {
 
     const cObj = countries.find(c => c.nameES === val);
     if (cObj) {
-      setPatientPhonePrefix(`+${cObj.phoneCode}`);
+      const newPrefix = `+${cObj.phoneCode}`;
+      setPatientPhonePrefix(newPrefix);
+      if (newPrefix === '+51') {
+        setPatientPhoneNumber(prev => prev.slice(0, 9));
+      }
     }
   };
 
@@ -615,6 +628,10 @@ const RegisterModal = ({ isOpen, onClose }) => {
           throw new Error('El DNI del apoderado y del paciente no pueden ser iguales.');
         }
 
+        if (finalProxyData.tipoDocumento !== 'DNI' && proxyDniClean.length > 12) {
+          throw new Error('El Carnet de extranjería del apoderado no puede tener más de 12 caracteres.');
+        }
+
         const proxyDniDup = await verificarDuplicadoDNI(proxyDniClean);
         if (proxyDniDup.error) {
           throw new Error(`Error al verificar DNI del apoderado: ${proxyDniDup.error}`);
@@ -663,9 +680,9 @@ const RegisterModal = ({ isOpen, onClose }) => {
         const perfilRes = await registrarPerfil({
           id: authId,
           dni: patientDniClean,
-          nombres: finalPatientData.nombres ?? null,
-          apellido_paterno: finalPatientData.apellidoPaterno ?? null,
-          apellido_materno: finalPatientData.apellidoMaterno ?? null,
+          nombres: toTitleCase(finalPatientData.nombres) ?? null,
+          apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) ?? null,
+          apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) ?? null,
           fecha_nacimiento: finalPatientData.fechaNacimiento,
           telefono: finalPatientData.telefono ?? null,
           correo: authEmail
@@ -678,20 +695,20 @@ const RegisterModal = ({ isOpen, onClose }) => {
           dni: patientDniClean,
           genero: finalPatientData.genero,
           fecha_nacimiento: finalPatientData.fechaNacimiento,
-          lugar_familia: finalPatientData.lugarFamilia ?? null,
-          estado_civil: finalPatientData.estadoCivil ?? null,
-          grado_instruccion: finalPatientData.gradoInstruccion ?? null,
-          ocupacion: finalPatientData.ocupacion ?? null,
-          direccion: finalPatientData.direccion ?? null,
+          lugar_familia: toTitleCase(finalPatientData.lugarFamilia) ?? null,
+          estado_civil: toTitleCase(finalPatientData.estadoCivil) ?? null,
+          grado_instruccion: toTitleCase(finalPatientData.gradoInstruccion) ?? null,
+          ocupacion: toTitleCase(finalPatientData.ocupacion) ?? null,
+          direccion: toTitleCase(finalPatientData.direccion) ?? null,
           telefono: finalPatientData.telefono ?? null,
           correo: finalPatientData.correoReal ?? null,
-          nombres: finalPatientData.nombres ?? null,
-          apellido_paterno: finalPatientData.apellidoPaterno ?? null,
-          apellido_materno: finalPatientData.apellidoMaterno ?? null,
-          pais: finalPatientData.pais ?? null,
-          departamento: finalPatientData.pais === 'Perú' ? (finalPatientData.departamento ?? null) : null,
-          provincia: finalPatientData.pais === 'Perú' ? (finalPatientData.provincia ?? null) : null,
-          distrito: finalPatientData.pais === 'Perú' ? (finalPatientData.distrito ?? null) : null,
+          nombres: toTitleCase(finalPatientData.nombres) ?? null,
+          apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) ?? null,
+          apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) ?? null,
+          pais: toTitleCase(finalPatientData.pais) ?? null,
+          departamento: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.departamento) ?? null) : null,
+          provincia: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.provincia) ?? null) : null,
+          distrito: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.distrito) ?? null) : null,
           estado_cuenta: 'INDEPENDIENTE',
           id_perfil_propio: authId,
           id_apoderado: null,
@@ -749,9 +766,9 @@ const RegisterModal = ({ isOpen, onClose }) => {
         const perfilRes = await registrarPerfil({
           id: authId,
           dni: proxyDniClean,
-          nombres: finalProxyData.nombres ?? null,
-          apellido_paterno: finalProxyData.apellidoPaterno ?? null,
-          apellido_materno: finalProxyData.apellidoMaterno ?? null,
+          nombres: toTitleCase(finalProxyData.nombres) ?? null,
+          apellido_paterno: toTitleCase(finalProxyData.apellidoPaterno) ?? null,
+          apellido_materno: toTitleCase(finalProxyData.apellidoMaterno) ?? null,
           fecha_nacimiento: finalProxyData.fechaNacimiento,
           telefono: finalProxyData.telefono ?? null,
           correo: proxyAuthEmail
@@ -764,16 +781,16 @@ const RegisterModal = ({ isOpen, onClose }) => {
           dni: proxyDniClean,
           genero: finalProxyData.genero,
           fecha_nacimiento: finalProxyData.fechaNacimiento,
-          direccion: finalPatientData.direccion ?? null,
+          direccion: toTitleCase(finalPatientData.direccion) ?? null,
           telefono: finalProxyData.telefono ?? null,
           correo: finalProxyData.correoReal ?? null,
-          nombres: finalProxyData.nombres ?? null,
-          apellido_paterno: finalProxyData.apellidoPaterno ?? null,
-          apellido_materno: finalProxyData.apellidoMaterno ?? null,
-          pais: finalPatientData.pais ?? null,
-          departamento: finalPatientData.pais === 'Perú' ? (finalPatientData.departamento ?? null) : null,
-          provincia: finalPatientData.pais === 'Perú' ? (finalPatientData.provincia ?? null) : null,
-          distrito: finalPatientData.pais === 'Perú' ? (finalPatientData.distrito ?? null) : null,
+          nombres: toTitleCase(finalProxyData.nombres) ?? null,
+          apellido_paterno: toTitleCase(finalProxyData.apellidoPaterno) ?? null,
+          apellido_materno: toTitleCase(finalProxyData.apellidoMaterno) ?? null,
+          pais: toTitleCase(finalPatientData.pais) ?? null,
+          departamento: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.departamento) ?? null) : null,
+          provincia: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.provincia) ?? null) : null,
+          distrito: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.distrito) ?? null) : null,
           estado_cuenta: 'INDEPENDIENTE',
           id_perfil_propio: authId,
           id_apoderado: null,
@@ -787,24 +804,24 @@ const RegisterModal = ({ isOpen, onClose }) => {
           dni: patientDniClean,
           genero: finalPatientData.genero,
           fecha_nacimiento: finalPatientData.fechaNacimiento,
-          lugar_familia: finalPatientData.lugarFamilia ?? null,
-          estado_civil: finalPatientData.estadoCivil ?? null,
-          grado_instruccion: finalPatientData.gradoInstruccion ?? null,
-          ocupacion: finalPatientData.ocupacion ?? null,
-          direccion: finalPatientData.direccion ?? null,
+          lugar_familia: toTitleCase(finalPatientData.lugarFamilia) ?? null,
+          estado_civil: toTitleCase(finalPatientData.estadoCivil) ?? null,
+          grado_instruccion: toTitleCase(finalPatientData.gradoInstruccion) ?? null,
+          ocupacion: toTitleCase(finalPatientData.ocupacion) ?? null,
+          direccion: toTitleCase(finalPatientData.direccion) ?? null,
           telefono: finalProxyData.telefono ?? null,
           correo: null,
-          nombres: finalPatientData.nombres ?? null,
-          apellido_paterno: finalPatientData.apellidoPaterno ?? null,
-          apellido_materno: finalPatientData.apellidoMaterno ?? null,
-          pais: finalPatientData.pais ?? null,
-          departamento: finalPatientData.pais === 'Perú' ? (finalPatientData.departamento ?? null) : null,
-          provincia: finalPatientData.pais === 'Perú' ? (finalPatientData.provincia ?? null) : null,
-          distrito: finalPatientData.pais === 'Perú' ? (finalPatientData.distrito ?? null) : null,
+          nombres: toTitleCase(finalPatientData.nombres) ?? null,
+          apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) ?? null,
+          apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) ?? null,
+          pais: toTitleCase(finalPatientData.pais) ?? null,
+          departamento: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.departamento) ?? null) : null,
+          provincia: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.provincia) ?? null) : null,
+          distrito: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.distrito) ?? null) : null,
           estado_cuenta: 'STANDBY',
           id_perfil_propio: null,
           id_apoderado: authId,
-          parentesco: finalProxyData.parentesco ?? null
+          parentesco: toTitleCase(finalProxyData.parentesco) ?? null
         });
 
         if (!pacienteRes.success) throw new Error(`Error de paciente dependiente: ${pacienteRes.error}`);
@@ -1010,9 +1027,11 @@ const RegisterModal = ({ isOpen, onClose }) => {
                           if (patientData.tipoDocumento === 'DNI') {
                             handleLimitInput(e, 8, (val) => handlePatientChange('dni', val));
                           } else {
-                            handlePatientChange('dni', e.target.value.trim());
+                            const val = e.target.value.replace(/\s/g, '').slice(0, 12);
+                            handlePatientChange('dni', val);
                           }
                         }}
+                        maxLength={patientData.tipoDocumento === 'DNI' ? 8 : 12}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px]"
                       />
                     </div>
@@ -1204,7 +1223,12 @@ const RegisterModal = ({ isOpen, onClose }) => {
                           <ComboBox
                             options={phoneOptions}
                             value={patientPhonePrefix}
-                            onChange={setPatientPhonePrefix}
+                            onChange={(val) => {
+                              setPatientPhonePrefix(val);
+                              if (val === '+51') {
+                                setPatientPhoneNumber(prev => prev.slice(0, 9));
+                              }
+                            }}
                             searchable
                             placeholder="+51"
                           />
@@ -1216,11 +1240,12 @@ const RegisterModal = ({ isOpen, onClose }) => {
                           value={patientPhoneNumber}
                           onChange={e => {
                             const val = e.target.value.replace(/\D/g, '');
-                            setPatientPhoneNumber(val.slice(0, 15));
+                            const limit = patientPhonePrefix === '+51' ? 9 : 15;
+                            setPatientPhoneNumber(val.slice(0, limit));
                           }}
                           placeholder="Número de celular"
                           className="flex-1 px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px]"
-                          maxLength={15}
+                          maxLength={patientPhonePrefix === '+51' ? 9 : 15}
                         />
                       </div>
                     )}
@@ -1296,9 +1321,11 @@ const RegisterModal = ({ isOpen, onClose }) => {
                           if (proxyData.tipoDocumento === 'DNI') {
                             handleLimitInput(e, 8, (val) => handleProxyChange('dni', val));
                           } else {
-                            handleProxyChange('dni', e.target.value.trim());
+                            const val = e.target.value.replace(/\s/g, '').slice(0, 12);
+                            handleProxyChange('dni', val);
                           }
                         }}
+                        maxLength={proxyData.tipoDocumento === 'DNI' ? 8 : 12}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px] disabled:opacity-50"
                       />
                     </div>
@@ -1371,7 +1398,12 @@ const RegisterModal = ({ isOpen, onClose }) => {
                           <ComboBox
                             options={phoneOptions}
                             value={proxyPhonePrefix}
-                            onChange={setProxyPhonePrefix}
+                            onChange={(val) => {
+                              setProxyPhonePrefix(val);
+                              if (val === '+51') {
+                                setProxyPhoneNumber(prev => prev.slice(0, 9));
+                              }
+                            }}
                             searchable
                             placeholder="+51"
                           />
@@ -1384,11 +1416,12 @@ const RegisterModal = ({ isOpen, onClose }) => {
                           value={proxyPhoneNumber}
                           onChange={e => {
                             const val = e.target.value.replace(/\D/g, '');
-                            setProxyPhoneNumber(val.slice(0, 15));
+                            const limit = proxyPhonePrefix === '+51' ? 9 : 15;
+                            setProxyPhoneNumber(val.slice(0, limit));
                           }}
                           placeholder="Número de celular"
                           className="flex-1 px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px]"
-                          maxLength={15}
+                          maxLength={proxyPhonePrefix === '+51' ? 9 : 15}
                         />
                       </div>
                     ) : (

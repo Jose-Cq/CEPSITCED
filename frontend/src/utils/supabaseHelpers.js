@@ -220,7 +220,7 @@ export const obtenerCitasPaciente = async (pacienteId) => {
   try {
     const { data, error } = await supabase
       .from('citas')
-      .select('*')
+      .select('*, habitaciones(nombre, locales(nombre, direccion))')
       .eq('paciente_id', pacienteId)
       .order('fecha_cita', { ascending: false });
 
@@ -395,5 +395,77 @@ export const obtenerCitasPsicologa = async (psicologoId, fecha) => {
     return { success: true, data };
   } catch (error) {
     return { success: false, error: error.message };
+  }
+};
+
+// ========== LOCALES Y HABITACIONES ==========
+export const obtenerLocalesActivos = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('locales')
+      .select('id, nombre, direccion, activo')
+      .eq('activo', true)
+      .order('nombre', { ascending: true });
+
+    if (error) {
+      console.error('Error cargando locales activos:', error);
+      return null;
+    }
+    return data || [];
+  } catch (err) {
+    console.error('Error cargando locales activos:', err);
+    return null;
+  }
+};
+
+export const obtenerHabitacionesPorLocal = async (localId) => {
+  try {
+    const { data, error } = await supabase
+      .from('habitaciones')
+      .select('id, nombre, local_id, activo')
+      .eq('local_id', localId)
+      .eq('activo', true)
+      .order('nombre', { ascending: true });
+
+    if (error) {
+      console.error('Error cargando habitaciones por local:', error);
+      return null;
+    }
+    return data || [];
+  } catch (err) {
+    console.error('Error cargando habitaciones por local:', err);
+    return null;
+  }
+};
+
+export const cancelarCita = async (citaId) => {
+  try {
+    const { data, error } = await supabase
+      .from('citas')
+      .update({ estado_cita: 'Cancelada' })
+      .eq('id', citaId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const obtenerMetodosPagoClinica = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('metodos_pago_clinica')
+      .select('*')
+      .eq('activo', true)
+      .order('tipo', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('Error cargando métodos de pago de clínica:', error);
+    return null;
   }
 };
