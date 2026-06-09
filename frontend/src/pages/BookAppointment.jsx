@@ -951,8 +951,8 @@ const BookAppointment = () => {
                   cargarSlotsDelDia(psicologaSeleccionada.id, dateStr, modalidad, activeLocal?.id);
                   setSlotSeleccionado(null);
                 }}
-                className={`py-2.5 rounded-xl font-bold transition-all ${isSelected
-                  ? 'bg-[#003178] text-white shadow-md transform scale-105'
+                className={`py-2.5 rounded-xl font-bold ${isSelected
+                  ? 'bg-[#003178] text-white shadow-md'
                   : isEnabled
                     ? 'bg-blue-50/60 hover:bg-blue-100/70 text-gray-900 border border-blue-100 cursor-pointer'
                     : 'bg-gray-50 text-gray-300 border border-gray-100 cursor-not-allowed opacity-50'
@@ -1176,7 +1176,7 @@ const BookAppointment = () => {
               <button
                 key={s.id}
                 type="button"
-                className={`p-5 rounded-2xl border text-left transition-all cursor-pointer ${isSelected
+                className={`p-5 rounded-2xl border text-left cursor-pointer ${isSelected
                   ? 'border-[#003178] bg-blue-50/40 shadow-sm'
                   : 'border-gray-200 hover:bg-gray-50'
                   }`}
@@ -1216,7 +1216,7 @@ const BookAppointment = () => {
                       <button
                         key={p.id}
                         type="button"
-                        className={`p-4 rounded-xl border text-left transition-all bg-white cursor-pointer ${isSelected
+                        className={`p-4 rounded-xl border text-left bg-white cursor-pointer ${isSelected
                           ? 'border-emerald-500 ring-2 ring-emerald-500/30'
                           : 'border-emerald-200 hover:bg-emerald-50/30'
                           }`}
@@ -1251,7 +1251,7 @@ const BookAppointment = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <button
                   type="button"
-                  className={`p-4 rounded-xl border text-left transition-all bg-white cursor-pointer ${!paqueteSeleccionado
+                  className={`p-4 rounded-xl border text-left bg-white cursor-pointer ${!paqueteSeleccionado
                     ? 'border-[#003178] ring-1 ring-[#003178]'
                     : 'border-gray-200 hover:bg-gray-50'
                     }`}
@@ -1268,7 +1268,7 @@ const BookAppointment = () => {
                     <button
                       key={p.id}
                       type="button"
-                      className={`p-4 rounded-xl border text-left transition-all bg-white cursor-pointer ${isSelected
+                      className={`p-4 rounded-xl border text-left bg-white cursor-pointer ${isSelected
                         ? 'border-[#003178] ring-1 ring-[#003178]'
                         : 'border-gray-200 hover:bg-gray-50'
                         }`}
@@ -1380,7 +1380,7 @@ const BookAppointment = () => {
                 <button
                   key={p.id}
                   type="button"
-                  className={`flex flex-col bg-white rounded-2xl border overflow-hidden text-left transition-all cursor-pointer ${isSelected
+                  className={`flex flex-col bg-white rounded-2xl border overflow-hidden text-left cursor-pointer ${isSelected
                     ? 'border-[#003178] ring-2 ring-blue-50/50 shadow-md'
                     : 'border-gray-200 hover:bg-gray-50 hover:shadow-sm'
                     }`}
@@ -1478,9 +1478,9 @@ const BookAppointment = () => {
               <div className="flex gap-4">
                 <button
                   type="button"
-                  className={`flex-1 py-3.5 px-4 rounded-xl border font-bold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${modalidad === 'Presencial'
+                  className={`flex-1 py-3.5 px-4 rounded-xl border font-bold text-sm flex items-center justify-center gap-2 cursor-pointer ${modalidad === 'Presencial'
                       ? 'bg-[#003178] border-[#003178] text-white shadow-md'
-                      : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                      : 'bg-white border-gray-200 text-gray-750 hover:bg-gray-50'
                     }`}
                   onClick={async () => {
                     if (modalidad !== 'Presencial') {
@@ -1497,7 +1497,7 @@ const BookAppointment = () => {
                 </button>
                 <button
                   type="button"
-                  className={`flex-1 py-3.5 px-4 rounded-xl border font-bold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${modalidad === 'Virtual'
+                  className={`flex-1 py-3.5 px-4 rounded-xl border font-bold text-sm flex items-center justify-center gap-2 cursor-pointer ${modalidad === 'Virtual'
                       ? 'bg-[#003178] border-[#003178] text-white shadow-md'
                       : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
                     }`}
@@ -1545,7 +1545,7 @@ const BookAppointment = () => {
                       <button
                         key={slot.id}
                         type="button"
-                        className={`p-2.5 rounded-xl border text-center font-bold text-xs transition-all cursor-pointer h-10 flex items-center justify-center ${isSelected
+                        className={`p-2.5 rounded-xl border text-center font-bold text-xs cursor-pointer h-10 flex items-center justify-center ${isSelected
                             ? 'bg-[#003178] border-[#003178] text-white shadow-sm'
                             : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
                           }`}
@@ -1661,7 +1661,7 @@ const BookAppointment = () => {
               <h5 className="font-bold text-sm text-slate-700 mb-3">Selecciona el Método de Pago</h5>
 
               <div className="flex flex-col gap-3">
-                <label className={`flex items-center p-4 border rounded-2xl cursor-pointer transition-all ${metodoPago === 'clinica'
+                <label className={`flex items-center p-4 border rounded-2xl cursor-pointer ${metodoPago === 'clinica'
                   ? 'border-[#003178] bg-blue-50/20 shadow-sm'
                   : 'border-gray-200 hover:bg-gray-50'
                   } ${modalidad === 'Virtual' ? 'opacity-50 cursor-not-allowed' : ''}`}>
@@ -1681,7 +1681,7 @@ const BookAppointment = () => {
                   <span className="material-symbols-outlined text-gray-400 text-[24px]">storefront</span>
                 </label>
 
-                <label className={`flex items-center p-4 border rounded-2xl cursor-pointer transition-all ${metodoPago === 'tarjeta'
+                <label className={`flex items-center p-4 border rounded-2xl cursor-pointer ${metodoPago === 'tarjeta'
                   ? 'border-[#003178] bg-blue-50/20 shadow-sm'
                   : 'border-gray-200 hover:bg-gray-50'
                   }`}>
@@ -1706,7 +1706,7 @@ const BookAppointment = () => {
                   <button
                     type="button"
                     onClick={() => setShowPaymentModal(true)}
-                    className="w-full py-3 px-4 border border-[#003178] text-[#003178] hover:bg-blue-50/50 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                    className="w-full py-3 px-4 border border-[#003178] text-[#003178] hover:bg-blue-50/50 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
                   >
                     <span className="material-symbols-outlined text-[16px]">info</span>
                     Ver datos de pago
@@ -1845,8 +1845,14 @@ const BookAppointment = () => {
       )}
 
       {showCommentsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="relative bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden p-6">
+        <div 
+          onClick={() => setShowCommentsModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="relative bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden p-6"
+          >
             <header className="flex justify-between items-center pb-3 border-b mb-4">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-[#003178]">rate_review</span>
@@ -1904,8 +1910,14 @@ const BookAppointment = () => {
       )}
 
       {showPaymentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="relative bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div 
+          onClick={handleClosePaymentModal}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="relative bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]"
+          >
             <header className="p-4 border-b border-gray-100 flex justify-between items-center bg-[#003178] text-white shrink-0">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-xl">credit_card</span>
@@ -2170,8 +2182,14 @@ const CulqiModal = ({ onClose, emailDefault, concept, price, onPay, navigate }) 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="relative bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-fade-in-up">
+    <div 
+      onClick={() => { if (!processing) onClose(); }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+    >
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        className="relative bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-fade-in-up"
+      >
         <header className="p-6 border-b border-gray-100 flex justify-between items-center bg-[#003178] text-white">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-2xl">credit_card</span>

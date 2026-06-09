@@ -107,7 +107,9 @@ const DashboardHome = () => {
       Pendiente: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
       Confirmada: { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200' },
       Realizada: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-200' },
+      Completada: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-200' },
       Cancelada: { bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-200' },
+      Reprogramada: { bg: 'bg-purple-50', text: 'text-purple-800', border: 'border-purple-200' },
     };
     const style = badges[estado] || badges.Pendiente;
     return (
@@ -119,6 +121,10 @@ const DashboardHome = () => {
 
   const loading = loadingProfile || loadingCitas || loadingDocs;
   const currentError = profileError || error;
+
+  const appointmentsHistorial = appointments.filter(cita =>
+    ['Pendiente', 'Confirmada', 'Reprogramada', 'Completada', 'Realizada'].includes(cita.estado_cita)
+  );
 
   return (
     <DashboardLayout currentPath="/dashboard">
@@ -397,12 +403,12 @@ const DashboardHome = () => {
                   <span className="material-symbols-outlined text-[#003178]">history</span>
                   Historial de Sesiones
                 </h4>
-                <p className="text-xs text-gray-500 font-semibold">Total de sesiones registradas: {appointments.length}</p>
+                <p className="text-xs text-gray-500 font-semibold">Total de sesiones registradas: {appointmentsHistorial.length}</p>
                 <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
-                  {appointments.length === 0 ? (
-                    <p className="text-xs text-gray-400 italic">No hay historial de citas.</p>
+                  {appointmentsHistorial.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic">No hay sesiones registradas para mostrar.</p>
                   ) : (
-                    appointments.map(cita => (
+                    appointmentsHistorial.map(cita => (
                       <div key={cita.id} className="flex justify-between items-center p-3 border-b border-gray-100 text-xs">
                         <div className="space-y-0.5">
                           <p className="font-semibold text-gray-800 leading-tight">{cita.servicio}</p>

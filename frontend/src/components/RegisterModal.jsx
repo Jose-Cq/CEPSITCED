@@ -66,7 +66,7 @@ const ComboBox = ({
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const triggerRef = useRef(null);
-  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
+  const [coords, setCoords] = useState(null);
 
   const selectedOption = options.find(opt => {
     if (typeof opt === 'object') {
@@ -96,12 +96,6 @@ const ComboBox = ({
       })
     : options;
 
-  const handleSelect = (opt) => {
-    onChange(getOptionValue(opt));
-    setIsOpen(false);
-    setSearch('');
-  };
-
   const updateCoords = () => {
     if (triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
@@ -126,6 +120,25 @@ const ComboBox = ({
     }
   };
 
+  const handleToggle = () => {
+    if (disabled) return;
+    if (!isOpen) {
+      updateCoords();
+      setIsOpen(true);
+    } else {
+      setIsOpen(false);
+      setSearch('');
+      setCoords(null);
+    }
+  };
+
+  const handleSelect = (opt) => {
+    onChange(getOptionValue(opt));
+    setIsOpen(false);
+    setSearch('');
+    setCoords(null);
+  };
+
   useEffect(() => {
     if (isOpen) {
       updateCoords();
@@ -142,8 +155,8 @@ const ComboBox = ({
     <div className={`relative w-full ${isOpen ? 'z-[50]' : 'z-10'} ${className}`} id={id}>
       <div
         ref={triggerRef}
-        onClick={() => !disabled && setIsOpen(!isOpen)}
-        className={`w-full px-4 bg-gray-50 border rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px] flex items-center justify-between cursor-pointer select-none ${
+        onClick={handleToggle}
+        className={`w-full px-4 bg-gray-50 border rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] h-[54px] flex items-center justify-between cursor-pointer select-none ${
           disabled ? 'opacity-50 cursor-not-allowed bg-gray-200 text-gray-400 border-gray-200' : 'border-gray-200 hover:border-gray-300'
         } ${isOpen ? 'border-[#003178] ring-1 ring-[#003178]/10' : ''}`}
       >
@@ -161,8 +174,8 @@ const ComboBox = ({
             <span className="text-gray-400 font-normal">{placeholder}</span>
           )}
         </div>
-        <span className="material-symbols-outlined text-gray-400 select-none" style={{ transform: isOpen ? 'rotate(180deg)' : 'none' }}>
-          expand_more
+        <span className="material-symbols-outlined text-gray-400 select-none">
+          {isOpen ? 'expand_less' : 'expand_more'}
         </span>
       </div>
 
@@ -176,9 +189,9 @@ const ComboBox = ({
         />
       )}
 
-      {isOpen && createPortal(
+      {isOpen && coords && createPortal(
         <>
-          <div className="fixed inset-0 z-[99998]" onClick={() => { setIsOpen(false); setSearch(''); }} />
+          <div className="fixed inset-0 z-[99998]" onClick={() => { setIsOpen(false); setSearch(''); setCoords(null); }} />
           <div
             style={{
               position: 'absolute',
@@ -188,7 +201,7 @@ const ComboBox = ({
               width: 'max-content',
               maxWidth: 'min(360px, 90vw)'
             }}
-            className="bg-white border border-gray-200 rounded-2xl shadow-xl z-[99999] overflow-hidden flex flex-col max-h-64"
+            className="bg-white border border-gray-200 rounded-2xl shadow-xl z-[99999] overflow-hidden flex flex-col max-h-64 transition-none animate-none"
           >
             {searchable && (
               <div className="p-2 border-b border-gray-100 bg-gray-50/50 sticky top-0 z-10 flex items-center gap-2">
@@ -218,7 +231,7 @@ const ComboBox = ({
                     <div
                       key={idx}
                       onClick={() => handleSelect(opt)}
-                      className={`px-4 py-3 hover:bg-gray-50 text-sm cursor-pointer transition-colors flex items-center justify-between gap-3 ${
+                      className={`px-4 py-3 hover:bg-gray-50 text-sm cursor-pointer flex items-center justify-between gap-3 ${
                         isSelected ? 'bg-blue-50/50 text-[#003178] font-bold' : 'text-gray-700'
                       }`}
                     >

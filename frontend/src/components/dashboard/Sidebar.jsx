@@ -11,11 +11,10 @@ const menuItems = [
 ];
 
 const bottomItems = [
-  { id: 'settings', icon: 'settings', label: 'Configuración', path: '/dashboard/settings' },
   { id: 'logout', icon: 'logout', label: 'Cerrar Sesión', path: '/logout' },
 ];
 
-const Sidebar = ({ currentPath, onNavigate, onBookAppointment }) => {
+const Sidebar = ({ currentPath, onNavigate, onBookAppointment, isMobile = false }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const currentRoute = currentPath || location.pathname;
@@ -55,7 +54,13 @@ const Sidebar = ({ currentPath, onNavigate, onBookAppointment }) => {
   };
 
   return (
-    <aside className="bg-white font-['Manrope'] text-sm font-medium fixed left-0 top-0 h-full w-64 border-r border-slate-100 flex flex-col py-6 z-40 hidden md:flex">
+    <aside
+      className={`bg-white font-['Manrope'] text-sm font-medium w-64 flex flex-col py-6 z-40 ${
+        isMobile
+          ? 'h-full w-full flex'
+          : 'fixed left-0 top-0 h-full border-r border-slate-100 hidden md:flex'
+      }`}
+    >
       {/* Header */}
       <div className="px-6 pb-8 mb-4 border-b border-slate-100">
         <div className="flex items-center gap-3">

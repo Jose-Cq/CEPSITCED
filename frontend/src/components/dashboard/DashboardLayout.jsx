@@ -2,11 +2,22 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
+import { usePacienteActual } from '../../hooks/usePacienteActual';
 
-const DashboardLayout = ({ children, userName, userAvatar }) => {
+const DashboardLayout = ({ children, userName: propUserName, userAvatar: propUserAvatar }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+
+  const { perfilUsuario } = usePacienteActual();
+
+  const userName = perfilUsuario
+    ? `${perfilUsuario.nombres || ''} ${perfilUsuario.apellido_paterno || ''} ${perfilUsuario.apellido_materno || ''}`.trim()
+    : (propUserName || 'Paciente');
+
+  const userAvatar = perfilUsuario
+    ? `${perfilUsuario.nombres?.charAt(0) || ''}${perfilUsuario.apellido_paterno?.charAt(0) || ''}`.toUpperCase()
+    : (propUserAvatar || (userName ? userName.charAt(0).toUpperCase() : 'P'));
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#f9f9fc]">
@@ -26,6 +37,7 @@ const DashboardLayout = ({ children, userName, userAvatar }) => {
           ></div>
           <div className="absolute left-0 top-0 h-full w-64 bg-white shadow-xl">
             <Sidebar
+              isMobile={true}
               currentPath={location.pathname}
               onNavigate={(path) => {
                 navigate(path);
