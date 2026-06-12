@@ -381,6 +381,10 @@ const BookAppointment = () => {
     if (id === 'a1f981b3-30fd-4ba8-80da-c32f4f5b1b51') return '/dr_valeria.png';
     if (id === 'a1f981b3-30fd-4ba8-80da-c32f4f5b1b52') return '/mg_beatriz.png';
     if (id === 'a1f981b3-30fd-4ba8-80da-c32f4f5b1b53') return '/lic_camila.png';
+    if (id === '0f7d4b9e-b74f-4d66-a052-4773fbb8c6ca') return '/Doctora Milagros Ordinola.jpeg';
+    if (id === '86bacf53-dd77-4899-bf11-f6f7b3cbf940') return '/Licenciada Karina.jpeg';
+    if (id === '17946652-05c2-4d7c-9d8b-37dd2147eba2') return '/Magister Williams.jpeg';
+    if (id === 'c4c6e1f8-a03b-457f-afb3-4546be2ec895') return '/Licenciada Jasmin Pillaca.jpeg';
     return null;
   };
 
@@ -1373,7 +1377,7 @@ const BookAppointment = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {psicologasDisponibles.map(p => {
               const isSelected = psicologaSeleccionada?.id === p.id;
-              const foto = getPsicoFoto(p.id) || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200';
+              const foto = getPsicoFoto(p.id) || '/default_perfil psicologia.jpeg';
               const fechaProx = fechasProximas[p.id];
 
               return (
