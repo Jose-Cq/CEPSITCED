@@ -86,6 +86,10 @@ export const obtenerServicios = async () => {
  * @returns {Promise<{success: boolean, data?: Array, error?: string}>}
  */
 export const obtenerPaquetes = async (servicioId) => {
+  if (!servicioId) {
+    console.warn('obtenerPaquetes llamado sin servicioId válido.');
+    return { success: true, data: [] };
+  }
   try {
     const { data, error } = await supabase
       .from('paquetes_catalogo')
@@ -93,7 +97,15 @@ export const obtenerPaquetes = async (servicioId) => {
       .eq('servicio_id', servicioId)
       .eq('activo', true);
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error Supabase en obtenerPaquetes:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      throw error;
+    }
     return { success: true, data };
   } catch (error) {
     return { success: false, error: error.message };

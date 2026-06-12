@@ -625,9 +625,10 @@ const RegisterModal = ({ isOpen, onClose }) => {
     }
 
     setIsSubmitting(true);
+    sessionStorage.setItem('is_registering', 'true');
 
     try {
-      // 1. Verificar duplicados de DNI en la base de datos
+      // 1. Verificar duplicados de DNI en la base de datos (perfiles de usuario)
       const patientDniDup = await verificarDuplicadoDNI(patientDniClean);
       if (patientDniDup.error) {
         throw new Error(`Error al verificar DNI del paciente: ${patientDniDup.error}`);
@@ -668,10 +669,6 @@ const RegisterModal = ({ isOpen, onClose }) => {
 
         const authEmail = finalPatientData.correoReal.trim().toLowerCase();
 
-        // console.log('SIGNUP EMAIL:', authEmail);
-        // console.log('SIGNUP DNI:', patientDniClean);
-        // console.log('FORM DATA REGISTRO:', finalPatientData);
-
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email: authEmail,
           password,
@@ -703,34 +700,73 @@ const RegisterModal = ({ isOpen, onClose }) => {
 
         if (!perfilRes.success) throw new Error(`Error de perfil: ${perfilRes.error}`);
 
-        const pacienteRes = await registrarPaciente({
-          numero_hc: numeroHC,
-          dni: patientDniClean,
-          genero: finalPatientData.genero,
-          fecha_nacimiento: finalPatientData.fechaNacimiento,
-          lugar_familia: toTitleCase(finalPatientData.lugarFamilia) ?? null,
-          estado_civil: toTitleCase(finalPatientData.estadoCivil) ?? null,
-          grado_instruccion: toTitleCase(finalPatientData.gradoInstruccion) ?? null,
-          ocupacion: toTitleCase(finalPatientData.ocupacion) ?? null,
-          direccion: toTitleCase(finalPatientData.direccion) ?? null,
-          telefono: finalPatientData.telefono ?? null,
-          correo: authEmail,
-          nombres: toTitleCase(finalPatientData.nombres) ?? null,
-          apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) ?? null,
-          apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) ?? null,
-          pais: toTitleCase(finalPatientData.pais) ?? null,
-          departamento: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.departamento) ?? null) : null,
-          provincia: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.provincia) ?? null) : null,
-          distrito: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.distrito) ?? null) : null,
-          estado_cuenta: 'INDEPENDIENTE',
-          id_perfil_propio: authId,
-          id_apoderado: null,
-          parentesco: null
-        });
+        // Verificar si ya existe el registro en pacientes por DNI antes de crear uno nuevo
+        const { data: pacienteExistente, error: errExistente } = await supabase
+          .from('pacientes')
+          .select('*')
+          .eq('dni', patientDniClean)
+          .maybeSingle();
+
+        if (errExistente) {
+          console.error('Error al buscar paciente existente:', errExistente);
+        }
+
+        let pacienteRes;
+        if (pacienteExistente) {
+          pacienteRes = await actualizarPaciente(pacienteExistente.id_paciente, {
+            id_perfil_propio: authId,
+            telefono: finalPatientData.telefono || pacienteExistente.telefono,
+            correo: authEmail,
+            genero: finalPatientData.genero,
+            fecha_nacimiento: finalPatientData.fechaNacimiento,
+            pais: toTitleCase(finalPatientData.pais) || pacienteExistente.pais,
+            departamento: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.departamento) || pacienteExistente.departamento) : null,
+            provincia: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.provincia) || pacienteExistente.provincia) : null,
+            distrito: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.distrito) || pacienteExistente.distrito) : null,
+            direccion: toTitleCase(finalPatientData.direccion) || pacienteExistente.direccion,
+            lugar_familia: toTitleCase(finalPatientData.lugarFamilia) || pacienteExistente.lugar_familia,
+            estado_civil: toTitleCase(finalPatientData.estadoCivil) || pacienteExistente.estado_civil,
+            grado_instruccion: toTitleCase(finalPatientData.gradoInstruccion) || pacienteExistente.grado_instruccion,
+            ocupacion: toTitleCase(finalPatientData.ocupacion) || pacienteExistente.ocupacion
+          });
+        } else {
+          pacienteRes = await registrarPaciente({
+            numero_hc: numeroHC,
+            dni: patientDniClean,
+            genero: finalPatientData.genero,
+            fecha_nacimiento: finalPatientData.fechaNacimiento,
+            lugar_familia: toTitleCase(finalPatientData.lugarFamilia) ?? null,
+            estado_civil: toTitleCase(finalPatientData.estadoCivil) ?? null,
+            grado_instruccion: toTitleCase(finalPatientData.gradoInstruccion) ?? null,
+            ocupacion: toTitleCase(finalPatientData.ocupacion) ?? null,
+            direccion: toTitleCase(finalPatientData.direccion) ?? null,
+            telefono: finalPatientData.telefono ?? null,
+            correo: authEmail,
+            nombres: toTitleCase(finalPatientData.nombres) ?? null,
+            apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) ?? null,
+            apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) ?? null,
+            pais: toTitleCase(finalPatientData.pais) ?? null,
+            departamento: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.departamento) ?? null) : null,
+            provincia: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.provincia) ?? null) : null,
+            distrito: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.distrito) ?? null) : null,
+            estado_cuenta: 'INDEPENDIENTE',
+            id_perfil_propio: authId,
+            id_apoderado: null,
+            parentesco: null
+          });
+        }
 
         if (!pacienteRes.success) throw new Error(`Error de paciente: ${pacienteRes.error}`);
 
-        setSuccessMessage(`¡Registro exitoso! Historia Clínica: ${numeroHC}. Accede al portal usando tu DNI.`);
+        const hcMostrada = pacienteExistente ? pacienteExistente.numero_hc : numeroHC;
+        setSuccessMessage(`¡Registro exitoso! Historia Clínica: ${hcMostrada}. Redirigiendo al portal...`);
+        sessionStorage.removeItem('is_registering');
+        setTimeout(() => {
+          resetForm();
+          onClose();
+          window.location.href = '/dashboard/appointments';
+        }, 3000);
+
       } else {
         // --- CASO: REGISTRO CON APODERADO ---
         const pRes = generarNumeroHC(
@@ -747,11 +783,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
         );
         const proxyHC = aRes.numeroHC;
 
-               const proxyAuthEmail = finalProxyData.correoReal.trim().toLowerCase();
-
-        // console.log('SIGNUP EMAIL:', proxyAuthEmail);
-        // console.log('SIGNUP DNI (APODERADO):', proxyDniClean);
-        // console.log('FORM DATA REGISTRO (APODERADO):', finalProxyData);
+        const proxyAuthEmail = finalProxyData.correoReal.trim().toLowerCase();
 
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email: proxyAuthEmail,
@@ -789,61 +821,120 @@ const RegisterModal = ({ isOpen, onClose }) => {
 
         if (!perfilRes.success) throw new Error(`Error de perfil de apoderado: ${perfilRes.error}`);
 
-        const apoderadoPacienteRes = await registrarPaciente({
-          numero_hc: proxyHC,
-          dni: proxyDniClean,
-          genero: finalProxyData.genero,
-          fecha_nacimiento: finalProxyData.fechaNacimiento,
-          direccion: toTitleCase(finalPatientData.direccion) ?? null,
-          telefono: finalProxyData.telefono ?? null,
-          correo: proxyAuthEmail,
-          nombres: toTitleCase(finalProxyData.nombres) ?? null,
-          apellido_paterno: toTitleCase(finalProxyData.apellidoPaterno) ?? null,
-          apellido_materno: toTitleCase(finalProxyData.apellidoMaterno) ?? null,
-          pais: toTitleCase(finalPatientData.pais) ?? null,
-          departamento: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.departamento) ?? null) : null,
-          provincia: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.provincia) ?? null) : null,
-          distrito: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.distrito) ?? null) : null,
-          estado_cuenta: 'INDEPENDIENTE',
-          id_perfil_propio: authId,
-          id_apoderado: null,
-          parentesco: null
-        });
+        // Verificar si el apoderado ya existe en pacientes por DNI
+        const { data: apoderadoExistente, error: errApoExistente } = await supabase
+          .from('pacientes')
+          .select('*')
+          .eq('dni', proxyDniClean)
+          .maybeSingle();
+
+        if (errApoExistente) {
+          console.error('Error al buscar apoderado existente:', errApoExistente);
+        }
+
+        let apoderadoPacienteRes;
+        if (apoderadoExistente) {
+          apoderadoPacienteRes = await actualizarPaciente(apoderadoExistente.id_paciente, {
+            id_perfil_propio: authId,
+            telefono: finalProxyData.telefono || apoderadoExistente.telefono,
+            correo: proxyAuthEmail,
+            genero: finalProxyData.genero,
+            fecha_nacimiento: finalProxyData.fechaNacimiento,
+            direccion: toTitleCase(finalPatientData.direccion) || apoderadoExistente.direccion
+          });
+        } else {
+          apoderadoPacienteRes = await registrarPaciente({
+            numero_hc: proxyHC,
+            dni: proxyDniClean,
+            genero: finalProxyData.genero,
+            fecha_nacimiento: finalProxyData.fechaNacimiento,
+            direccion: toTitleCase(finalPatientData.direccion) ?? null,
+            telefono: finalProxyData.telefono ?? null,
+            correo: proxyAuthEmail,
+            nombres: toTitleCase(finalProxyData.nombres) ?? null,
+            apellido_paterno: toTitleCase(finalProxyData.apellidoPaterno) ?? null,
+            apellido_materno: toTitleCase(finalProxyData.apellidoMaterno) ?? null,
+            pais: toTitleCase(finalPatientData.pais) ?? null,
+            departamento: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.departamento) ?? null) : null,
+            provincia: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.provincia) ?? null) : null,
+            distrito: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.distrito) ?? null) : null,
+            estado_cuenta: 'INDEPENDIENTE',
+            id_perfil_propio: authId,
+            id_apoderado: null,
+            parentesco: null
+          });
+        }
 
         if (!apoderadoPacienteRes.success) throw new Error(`Error de paciente (apoderado): ${apoderadoPacienteRes.error}`);
 
-        const pacienteRes = await registrarPaciente({
-          numero_hc: patientHC,
-          dni: patientDniClean,
-          genero: finalPatientData.genero,
-          fecha_nacimiento: finalPatientData.fechaNacimiento,
-          lugar_familia: toTitleCase(finalPatientData.lugarFamilia) ?? null,
-          estado_civil: toTitleCase(finalPatientData.estadoCivil) ?? null,
-          grado_instruccion: toTitleCase(finalPatientData.gradoInstruccion) ?? null,
-          ocupacion: toTitleCase(finalPatientData.ocupacion) ?? null,
-          direccion: toTitleCase(finalPatientData.direccion) ?? null,
-          telefono: finalProxyData.telefono ?? null,
-          correo: proxyAuthEmail,
-          nombres: toTitleCase(finalPatientData.nombres) ?? null,
-          apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) ?? null,
-          apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) ?? null,
-          pais: toTitleCase(finalPatientData.pais) ?? null,
-          departamento: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.departamento) ?? null) : null,
-          provincia: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.provincia) ?? null) : null,
-          distrito: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.distrito) ?? null) : null,
-          estado_cuenta: 'STANDBY',
-          id_perfil_propio: null,
-          id_apoderado: authId,
-          parentesco: toTitleCase(finalProxyData.parentesco) ?? null
-        });
+        // Verificar si el paciente dependiente ya existe en pacientes por DNI
+        const { data: pacienteExistente, error: errPacExistente } = await supabase
+          .from('pacientes')
+          .select('*')
+          .eq('dni', patientDniClean)
+          .maybeSingle();
+
+        if (errPacExistente) {
+          console.error('Error al buscar paciente dependiente existente:', errPacExistente);
+        }
+
+        let pacienteRes;
+        if (pacienteExistente) {
+          pacienteRes = await actualizarPaciente(pacienteExistente.id_paciente, {
+            id_apoderado: authId,
+            estado_cuenta: 'STANDBY',
+            parentesco: toTitleCase(finalProxyData.parentesco) || pacienteExistente.parentesco,
+            telefono: finalProxyData.telefono || pacienteExistente.telefono,
+            correo: proxyAuthEmail,
+            genero: finalPatientData.genero,
+            fecha_nacimiento: finalPatientData.fechaNacimiento,
+            direccion: toTitleCase(finalPatientData.direccion) || pacienteExistente.direccion,
+            lugar_familia: toTitleCase(finalPatientData.lugarFamilia) || pacienteExistente.lugar_familia,
+            estado_civil: toTitleCase(finalPatientData.estadoCivil) || pacienteExistente.estado_civil,
+            grado_instruccion: toTitleCase(finalPatientData.gradoInstruccion) || pacienteExistente.grado_instruccion,
+            ocupacion: toTitleCase(finalPatientData.ocupacion) || pacienteExistente.ocupacion
+          });
+        } else {
+          pacienteRes = await registrarPaciente({
+            numero_hc: patientHC,
+            dni: patientDniClean,
+            genero: finalPatientData.genero,
+            fecha_nacimiento: finalPatientData.fechaNacimiento,
+            lugar_familia: toTitleCase(finalPatientData.lugarFamilia) ?? null,
+            estado_civil: toTitleCase(finalPatientData.estadoCivil) ?? null,
+            grado_instruccion: toTitleCase(finalPatientData.gradoInstruccion) ?? null,
+            ocupacion: toTitleCase(finalPatientData.ocupacion) ?? null,
+            direccion: toTitleCase(finalPatientData.direccion) ?? null,
+            telefono: finalProxyData.telefono ?? null,
+            correo: proxyAuthEmail,
+            nombres: toTitleCase(finalPatientData.nombres) ?? null,
+            apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) ?? null,
+            apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) ?? null,
+            pais: toTitleCase(finalPatientData.pais) ?? null,
+            departamento: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.departamento) ?? null) : null,
+            provincia: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.provincia) ?? null) : null,
+            distrito: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.distrito) ?? null) : null,
+            estado_cuenta: 'STANDBY',
+            id_perfil_propio: null,
+            id_apoderado: authId,
+            parentesco: toTitleCase(finalProxyData.parentesco) ?? null
+          });
+        }
 
         if (!pacienteRes.success) throw new Error(`Error de paciente dependiente: ${pacienteRes.error}`);
 
-        setSuccessMessage(`¡Registro exitoso! HC Paciente: ${patientHC}, HC Apoderado: ${proxyHC}. El apoderado puede iniciar sesión con su DNI.`);
+        const hcPacienteMostrada = pacienteExistente ? pacienteExistente.numero_hc : patientHC;
+        const hcApoderadoMostrada = apoderadoExistente ? apoderadoExistente.numero_hc : proxyHC;
+        setSuccessMessage(`¡Registro exitoso! HC Paciente: ${hcPacienteMostrada}, HC Apoderado: ${hcApoderadoMostrada}. Redirigiendo al portal...`);
+        sessionStorage.removeItem('is_registering');
+        setTimeout(() => {
+          resetForm();
+          onClose();
+          window.location.href = '/dashboard/appointments';
+        }, 3000);
       }
-
-      setTimeout(() => { resetForm(); onClose(); }, 6000);
     } catch (error) {
+      sessionStorage.removeItem('is_registering');
       setSubmitError(error.message);
     } finally {
       setIsSubmitting(false);

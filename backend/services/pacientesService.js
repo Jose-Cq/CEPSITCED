@@ -44,11 +44,23 @@ const filterValidPatientFields = (data) => {
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
  */
 export const iniciarSesion = async (dni, password) => {
+  if (!dni) {
+    return { success: false, error: 'El DNI es obligatorio.' };
+  }
   try {
     const { data: correoAuth, error: queryError } = await supabase
       .rpc('buscar_correo_por_dni', { p_dni: dni });
 
-    if (queryError || !correoAuth) {
+    if (queryError) {
+      console.error('Error Supabase en buscar_correo_por_dni:', {
+        message: queryError.message,
+        details: queryError.details,
+        hint: queryError.hint,
+        code: queryError.code
+      });
+      return { success: false, error: 'DNI no registrado o error de búsqueda.' };
+    }
+    if (!correoAuth) {
       return { success: false, error: 'DNI no registrado.' };
     }
 
@@ -58,6 +70,10 @@ export const iniciarSesion = async (dni, password) => {
     });
 
     if (error) {
+      console.error('Error Supabase en signInWithPassword:', {
+        message: error.message,
+        code: error.code
+      });
       if (error.message.includes('Invalid login credentials')) return { success: false, error: 'Contraseña incorrecta.' };
       if (error.message.includes('rate limit')) return { success: false, error: 'Demasiados intentos. Espera unos minutos.' };
       return { success: false, error: 'Error al iniciar sesión.' };
@@ -186,6 +202,10 @@ export const registrarPaciente = async (pacienteData) => {
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
  */
 export const obtenerPacienteActual = async (authId) => {
+  if (!authId) {
+    console.warn('obtenerPacienteActual llamado sin authId válido.');
+    return { success: false, error: 'ID de autenticación no proporcionado.' };
+  }
   try {
     const { data, error } = await supabase
       .from('pacientes')
@@ -193,7 +213,15 @@ export const obtenerPacienteActual = async (authId) => {
       .eq('id_perfil_propio', authId)
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error Supabase en obtenerPacienteActual:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      throw error;
+    }
     const mapped = data ? { ...data, id: data.id_paciente } : null;
     return { success: true, data: mapped };
   } catch (error) {
@@ -208,6 +236,10 @@ export const obtenerPacienteActual = async (authId) => {
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
  */
 export const actualizarPaciente = async (pacienteId, updateData) => {
+  if (!pacienteId) {
+    console.warn('actualizarPaciente llamado sin pacienteId válido.');
+    return { success: false, error: 'ID de paciente no proporcionado.' };
+  }
   const cleanedData = filterValidPatientFields(updateData);
 
   try {
@@ -218,7 +250,15 @@ export const actualizarPaciente = async (pacienteId, updateData) => {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error Supabase en actualizarPaciente:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      throw error;
+    }
     const mapped = data ? { ...data, id: data.id_paciente } : null;
     return { success: true, data: mapped };
   } catch (error) {
@@ -232,13 +272,25 @@ export const actualizarPaciente = async (pacienteId, updateData) => {
  * @returns {Promise<{success: boolean, data?: Array, error?: string}>}
  */
 export const obtenerPacientesAsociados = async (apoderadoId) => {
+  if (!apoderadoId) {
+    console.warn('obtenerPacientesAsociados llamado sin apoderadoId válido.');
+    return { success: true, data: [] };
+  }
   try {
     const { data, error } = await supabase
       .from('pacientes')
       .select('*')
       .eq('id_apoderado', apoderadoId);
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error Supabase en obtenerPacientesAsociados:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      throw error;
+    }
     const mappedData = data ? data.map(d => ({ ...d, id: d.id_paciente })) : [];
     return { success: true, data: mappedData };
   } catch (error) {
@@ -259,6 +311,10 @@ export const obtenerApoderados = async (apoderadoId) => {
  * @returns {Promise<{success: boolean, data?: Array, error?: string}>}
  */
 export const obtenerDocumentosPaciente = async (pacienteId) => {
+  if (!pacienteId) {
+    console.warn('obtenerDocumentosPaciente llamado sin pacienteId válido.');
+    return { success: true, data: [] };
+  }
   try {
     const { data, error } = await supabase
       .from('tramites_documentales')
@@ -266,7 +322,15 @@ export const obtenerDocumentosPaciente = async (pacienteId) => {
       .eq('paciente_id', pacienteId)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error Supabase en obtenerDocumentosPaciente:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      throw error;
+    }
     return { success: true, data };
   } catch (error) {
     return { success: false, error: error.message };

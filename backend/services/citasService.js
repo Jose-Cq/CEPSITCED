@@ -6,6 +6,10 @@ import { supabase } from '../../frontend/src/supabaseClient.js';
  * @returns {Promise<{success: boolean, data?: Array, error?: string}>}
  */
 export const obtenerCitasPaciente = async (pacienteId) => {
+  if (!pacienteId) {
+    console.warn('obtenerCitasPaciente llamado sin pacienteId válido.');
+    return { success: true, data: [] };
+  }
   try {
     const { data, error } = await supabase
       .from('citas')
@@ -13,7 +17,15 @@ export const obtenerCitasPaciente = async (pacienteId) => {
       .eq('paciente_id', pacienteId)
       .order('fecha_cita', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error Supabase en obtenerCitasPaciente:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      throw error;
+    }
     return { success: true, data };
   } catch (error) {
     return { success: false, error: error.message };
@@ -66,13 +78,25 @@ export const obtenerCitasDelDia = async (fecha) => {
  * @returns {Promise<{success: boolean, data?: Array, error?: string}>}
  */
 export const obtenerPsicologasPorServicio = async (servicioId) => {
+  if (!servicioId) {
+    console.warn('obtenerPsicologasPorServicio llamado sin servicioId válido.');
+    return { success: true, data: [] };
+  }
   try {
     const { data: psRelations, error: relError } = await supabase
       .from('psicologo_servicio')
       .select('psicologo_id')
       .eq('servicio_id', servicioId);
 
-    if (relError) throw relError;
+    if (relError) {
+      console.error('Error Supabase en obtenerPsicologasPorServicio (relaciones):', {
+        message: relError.message,
+        details: relError.details,
+        hint: relError.hint,
+        code: relError.code
+      });
+      throw relError;
+    }
     if (!psRelations || psRelations.length === 0) return { success: true, data: [] };
 
     const psicologoIds = psRelations.map(r => r.psicologo_id);
@@ -83,7 +107,15 @@ export const obtenerPsicologasPorServicio = async (servicioId) => {
       .in('id', psicologoIds)
       .eq('activo', true);
 
-    if (empError) throw empError;
+    if (empError) {
+      console.error('Error Supabase en obtenerPsicologasPorServicio (empleados):', {
+        message: empError.message,
+        details: empError.details,
+        hint: empError.hint,
+        code: empError.code
+      });
+      throw empError;
+    }
 
     const mappedData = employees ? employees.map(emp => ({
       ...emp,
@@ -104,6 +136,10 @@ export const obtenerPsicologasPorServicio = async (servicioId) => {
  * @returns {Promise<{success: boolean, data?: Array, error?: string}>}
  */
 export const obtenerHorariosPsicologas = async (psicologoId, fecha, modalidad) => {
+  if (!psicologoId) {
+    console.warn('obtenerHorariosPsicologas llamado sin psicologoId válido.');
+    return { success: true, data: [] };
+  }
   try {
     let query = supabase
       .from('horarios_empleados')
@@ -119,7 +155,15 @@ export const obtenerHorariosPsicologas = async (psicologoId, fecha, modalidad) =
     }
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) {
+      console.error('Error Supabase en obtenerHorariosPsicologas:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      throw error;
+    }
     return { success: true, data };
   } catch (error) {
     return { success: false, error: error.message };
@@ -133,6 +177,10 @@ export const obtenerHorariosPsicologas = async (psicologoId, fecha, modalidad) =
  * @returns {Promise<{success: boolean, data?: Array, error?: string}>}
  */
 export const obtenerCitasPsicologa = async (psicologoId, fecha) => {
+  if (!psicologoId) {
+    console.warn('obtenerCitasPsicologa llamado sin psicologoId válido.');
+    return { success: true, data: [] };
+  }
   try {
     const { data, error } = await supabase
       .from('citas')
@@ -141,7 +189,15 @@ export const obtenerCitasPsicologa = async (psicologoId, fecha) => {
       .eq('fecha_cita', fecha)
       .neq('estado_cita', 'cancelada');
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error Supabase en obtenerCitasPsicologa:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      throw error;
+    }
     return { success: true, data };
   } catch (error) {
     return { success: false, error: error.message };
@@ -154,6 +210,10 @@ export const obtenerCitasPsicologa = async (psicologoId, fecha) => {
  * @returns {Promise<Array|null>}
  */
 export const obtenerHabitacionesPorLocal = async (localId) => {
+  if (!localId) {
+    console.warn('obtenerHabitacionesPorLocal llamado sin localId válido.');
+    return [];
+  }
   try {
     const { data, error } = await supabase
       .from('habitaciones')
@@ -162,7 +222,15 @@ export const obtenerHabitacionesPorLocal = async (localId) => {
       .eq('activo', true)
       .order('nombre', { ascending: true });
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error Supabase en obtenerHabitacionesPorLocal:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      throw error;
+    }
     return data || [];
   } catch (err) {
     console.error('Error loading rooms by local:', err.message);
@@ -176,6 +244,10 @@ export const obtenerHabitacionesPorLocal = async (localId) => {
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
  */
 export const cancelarCita = async (citaId) => {
+  if (!citaId) {
+    console.warn('cancelarCita llamado sin citaId válido.');
+    return { success: false, error: 'ID de cita no proporcionado.' };
+  }
   try {
     const { data, error } = await supabase
       .from('citas')
@@ -184,7 +256,15 @@ export const cancelarCita = async (citaId) => {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error Supabase en cancelarCita:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      throw error;
+    }
     return { success: true, data };
   } catch (error) {
     return { success: false, error: error.message };

@@ -189,8 +189,8 @@ const App = () => {
     );
   }
 
-  // Si hay sesión, mostrar dashboard
-  if (session) {
+  // Si hay sesión y no estamos en proceso de registro, mostrar dashboard
+  if (session && sessionStorage.getItem('is_registering') !== 'true') {
     return (
       <Routes>
         <Route path="/dashboard" element={<DashboardHome />} />
