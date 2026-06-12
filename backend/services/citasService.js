@@ -1,7 +1,5 @@
 import { supabase } from '../../frontend/src/supabaseClient.js';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-
 const getHeaders = async () => {
   const { data: { session } } = await supabase.auth.getSession();
   const headers = {
@@ -22,7 +20,7 @@ export const obtenerCitasPaciente = async (pacienteId) => {
   }
   try {
     const headers = await getHeaders();
-    const res = await fetch(`${API_URL}/api/citas/paciente/${pacienteId}`, {
+    const res = await fetch(`/api/citas/paciente/${pacienteId}`, {
       headers
     });
     const result = await res.json();
@@ -40,7 +38,7 @@ export const obtenerCitasPaciente = async (pacienteId) => {
 export const crearCita = async (citaData) => {
   try {
     const headers = await getHeaders();
-    const res = await fetch(`${API_URL}/api/citas`, {
+    const res = await fetch('/api/citas', {
       method: 'POST',
       headers,
       body: JSON.stringify(citaData)
@@ -59,7 +57,7 @@ export const crearCita = async (citaData) => {
  */
 export const obtenerCitasDelDia = async (fecha) => {
   try {
-    const res = await fetch(`${API_URL}/api/citas/dia?fecha=${fecha}`);
+    const res = await fetch(`/api/citas/dia?fecha=${fecha}`);
     if (!res.ok) throw new Error('Error al obtener citas del día');
     return await res.json();
   } catch (error) {
@@ -76,7 +74,7 @@ export const obtenerPsicologasPorServicio = async (servicioId) => {
     return { success: true, data: [] };
   }
   try {
-    const res = await fetch(`${API_URL}/api/citas/psicologas-servicio/${servicioId}`);
+    const res = await fetch(`/api/citas/psicologas-servicio/${servicioId}`);
     if (!res.ok) throw new Error('Error al obtener psicólogas por servicio');
     return await res.json();
   } catch (error) {
@@ -97,7 +95,7 @@ export const obtenerHorariosPsicologas = async (psicologoId, fecha, modalidad) =
     if (fecha) queryParams += `&fecha=${fecha}`;
     if (modalidad) queryParams += `&modalidad=${modalidad}`;
 
-    const res = await fetch(`${API_URL}/api/citas/horarios-psicologas?${queryParams}`);
+    const res = await fetch(`/api/citas/horarios-psicologas?${queryParams}`);
     if (!res.ok) throw new Error('Error al obtener horarios de psicólogas');
     return await res.json();
   } catch (error) {
@@ -114,7 +112,7 @@ export const obtenerCitasPsicologa = async (psicologoId, fecha) => {
     return { success: true, data: [] };
   }
   try {
-    const res = await fetch(`${API_URL}/api/citas/citas-psicologa?psicologoId=${psicologoId}&fecha=${fecha}`);
+    const res = await fetch(`/api/citas/citas-psicologa?psicologoId=${psicologoId}&fecha=${fecha}`);
     if (!res.ok) throw new Error('Error al obtener citas de psicóloga');
     return await res.json();
   } catch (error) {
@@ -131,7 +129,7 @@ export const obtenerHabitacionesPorLocal = async (localId) => {
     return [];
   }
   try {
-    const res = await fetch(`${API_URL}/api/citas/habitaciones/${localId}`);
+    const res = await fetch(`/api/citas/habitaciones/${localId}`);
     if (!res.ok) throw new Error('Error al obtener habitaciones por local');
     return await res.json();
   } catch (err) {
@@ -149,7 +147,7 @@ export const cancelarCita = async (citaId) => {
   }
   try {
     const headers = await getHeaders();
-    const res = await fetch(`${API_URL}/api/citas/${citaId}/cancelar`, {
+    const res = await fetch(`/api/citas/${citaId}/cancelar`, {
       method: 'PUT',
       headers
     });

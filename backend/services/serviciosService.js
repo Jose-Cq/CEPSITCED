@@ -1,12 +1,10 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-
 /**
  * Obtiene todos los locales activos.
  * @returns {Promise<Array>}
  */
 export const obtenerLocalesActivos = async () => {
   try {
-    const res = await fetch(`${API_URL}/api/servicios/locales`);
+    const res = await fetch('/api/servicios/locales');
     if (!res.ok) throw new Error('Error al obtener locales desde la API');
     return await res.json();
   } catch (err) {
@@ -23,8 +21,8 @@ export const obtenerLocalesActivos = async () => {
 export const obtenerServiciosLandingPorLocal = async (localId) => {
   try {
     const url = localId 
-      ? `${API_URL}/api/servicios/landing?localId=${localId}`
-      : `${API_URL}/api/servicios/landing`;
+      ? `/api/servicios/landing?localId=${localId}`
+      : `/api/servicios/landing`;
     const res = await fetch(url);
     if (!res.ok) throw new Error('Error al obtener servicios por local desde la API');
     return await res.json();
@@ -40,7 +38,7 @@ export const obtenerServiciosLandingPorLocal = async (localId) => {
  */
 export const obtenerServicios = async () => {
   try {
-    const res = await fetch(`${API_URL}/api/servicios`);
+    const res = await fetch('/api/servicios');
     if (!res.ok) throw new Error('Error al obtener servicios desde la API');
     return await res.json();
   } catch (err) {
@@ -59,7 +57,7 @@ export const obtenerPaquetes = async (servicioId) => {
     return { success: true, data: [] };
   }
   try {
-    const res = await fetch(`${API_URL}/api/servicios/${servicioId}/paquetes`);
+    const res = await fetch(`/api/servicios/${servicioId}/paquetes`);
     if (!res.ok) throw new Error('Error al obtener paquetes desde la API');
     return await res.json();
   } catch (err) {

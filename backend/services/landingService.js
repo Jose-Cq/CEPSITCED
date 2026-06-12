@@ -1,12 +1,10 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-
 /**
  * Obtiene los slides activos para el carrusel de la landing.
  * @returns {Promise<Array>}
  */
 export const obtenerCarruselLanding = async () => {
   try {
-    const res = await fetch(`${API_URL}/api/landing/carousel`);
+    const res = await fetch('/api/landing/carousel');
     if (!res.ok) throw new Error('Error al obtener carrusel desde la API');
     return await res.json();
   } catch (err) {
@@ -21,7 +19,7 @@ export const obtenerCarruselLanding = async () => {
  */
 export const obtenerConfiguracionLanding = async () => {
   try {
-    const res = await fetch(`${API_URL}/api/landing/configuracion`);
+    const res = await fetch('/api/landing/configuracion');
     if (!res.ok) throw new Error('Error al obtener configuración desde la API');
     return await res.json();
   } catch (err) {
@@ -36,7 +34,7 @@ export const obtenerConfiguracionLanding = async () => {
  */
 export const obtenerTestimoniosLanding = async () => {
   try {
-    const res = await fetch(`${API_URL}/api/landing/testimonios`);
+    const res = await fetch('/api/landing/testimonios');
     if (!res.ok) throw new Error('Error al obtener testimonios desde la API');
     return await res.json();
   } catch (err) {

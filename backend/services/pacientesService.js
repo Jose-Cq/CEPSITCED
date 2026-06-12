@@ -1,7 +1,5 @@
 import { supabase } from '../../frontend/src/supabaseClient.js';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-
 const getHeaders = async () => {
   const { data: { session } } = await supabase.auth.getSession();
   const headers = {
@@ -19,7 +17,7 @@ const getHeaders = async () => {
  */
 export const iniciarSesion = async (dni, password) => {
   try {
-    const res = await fetch(`${API_URL}/api/pacientes/iniciar-sesion`, {
+    const res = await fetch('/api/pacientes/iniciar-sesion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ dni, password })
@@ -65,7 +63,7 @@ export const cerrarSesion = async () => {
  */
 export const obtenerUltimoNumeroHC = async () => {
   try {
-    const res = await fetch(`${API_URL}/api/pacientes/ultimo-hc`);
+    const res = await fetch('/api/pacientes/ultimo-hc');
     if (!res.ok) throw new Error('Error al obtener el último HC');
     const result = await res.json();
     return result.data || null;
@@ -80,7 +78,7 @@ export const obtenerUltimoNumeroHC = async () => {
  */
 export const verificarDuplicadoDNI = async (dni) => {
   try {
-    const res = await fetch(`${API_URL}/api/pacientes/verificar-dni?dni=${dni}`);
+    const res = await fetch(`/api/pacientes/verificar-dni?dni=${dni}`);
     if (!res.ok) throw new Error('Error al verificar duplicado de DNI');
     const result = await res.json();
     return { duplicated: !!result.duplicated };
@@ -96,7 +94,7 @@ export const verificarDuplicadoDNI = async (dni) => {
 export const obtenerPerfilActual = async () => {
   try {
     const headers = await getHeaders();
-    const res = await fetch(`${API_URL}/api/pacientes/perfil/actual`, {
+    const res = await fetch('/api/pacientes/perfil/actual', {
       headers
     });
     const result = await res.json();
@@ -114,7 +112,7 @@ export const obtenerPerfilActual = async () => {
 export const registrarPerfil = async (perfilData) => {
   try {
     const headers = await getHeaders();
-    const res = await fetch(`${API_URL}/api/pacientes/perfil`, {
+    const res = await fetch('/api/pacientes/perfil', {
       method: 'POST',
       headers,
       body: JSON.stringify(perfilData)
@@ -134,7 +132,7 @@ export const registrarPerfil = async (perfilData) => {
 export const registrarPaciente = async (pacienteData) => {
   try {
     const headers = await getHeaders();
-    const res = await fetch(`${API_URL}/api/pacientes`, {
+    const res = await fetch('/api/pacientes', {
       method: 'POST',
       headers,
       body: JSON.stringify(pacienteData)
@@ -154,7 +152,7 @@ export const registrarPaciente = async (pacienteData) => {
 export const obtenerPacienteActual = async () => {
   try {
     const headers = await getHeaders();
-    const res = await fetch(`${API_URL}/api/pacientes/actual`, {
+    const res = await fetch('/api/pacientes/actual', {
       headers
     });
     const result = await res.json();
@@ -172,7 +170,7 @@ export const obtenerPacienteActual = async () => {
 export const actualizarPaciente = async (pacienteId, updateData) => {
   try {
     const headers = await getHeaders();
-    const res = await fetch(`${API_URL}/api/pacientes/${pacienteId}`, {
+    const res = await fetch(`/api/pacientes/${pacienteId}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify(updateData)
@@ -192,7 +190,7 @@ export const actualizarPaciente = async (pacienteId, updateData) => {
 export const obtenerPacientesAsociados = async () => {
   try {
     const headers = await getHeaders();
-    const res = await fetch(`${API_URL}/api/pacientes/asociados`, {
+    const res = await fetch('/api/pacientes/asociados', {
       headers
     });
     const result = await res.json();
@@ -215,7 +213,7 @@ export const obtenerApoderados = async () => {
 export const obtenerDocumentosPaciente = async (pacienteId) => {
   try {
     const headers = await getHeaders();
-    const res = await fetch(`${API_URL}/api/pacientes/${pacienteId}/documentos`, {
+    const res = await fetch(`/api/pacientes/${pacienteId}/documentos`, {
       headers
     });
     const result = await res.json();
@@ -233,7 +231,7 @@ export const obtenerDocumentosPaciente = async (pacienteId) => {
 export const obtenerEmpleados = async () => {
   try {
     const headers = await getHeaders();
-    const res = await fetch(`${API_URL}/api/pacientes/empleados`, {
+    const res = await fetch('/api/pacientes/empleados', {
       headers
     });
     const result = await res.json();
