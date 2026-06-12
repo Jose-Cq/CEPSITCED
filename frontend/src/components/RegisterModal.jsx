@@ -596,8 +596,8 @@ const RegisterModal = ({ isOpen, onClose }) => {
         setSubmitError('El género del apoderado es obligatorio.');
         return;
       }
-      if (!finalProxyData.correoReal) {
-        setSubmitError('El correo electrónico del apoderado es obligatorio.');
+      if (!finalProxyData.correoReal || !finalProxyData.correoReal.includes('@')) {
+        setSubmitError('El correo electrónico del apoderado es obligatorio y debe ser válido.');
         return;
       }
     } else {
@@ -666,7 +666,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
           ultimoHC
         );
 
-        const authEmail = `${patientDniClean}@paciente.cepsitced.com`;
+        const authEmail = finalPatientData.correoReal.trim().toLowerCase();
 
         // console.log('SIGNUP EMAIL:', authEmail);
         // console.log('SIGNUP DNI:', patientDniClean);
@@ -714,7 +714,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
           ocupacion: toTitleCase(finalPatientData.ocupacion) ?? null,
           direccion: toTitleCase(finalPatientData.direccion) ?? null,
           telefono: finalPatientData.telefono ?? null,
-          correo: finalPatientData.correoReal ?? null,
+          correo: authEmail,
           nombres: toTitleCase(finalPatientData.nombres) ?? null,
           apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) ?? null,
           apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) ?? null,
@@ -747,7 +747,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
         );
         const proxyHC = aRes.numeroHC;
 
-        const proxyAuthEmail = `${proxyDniClean}@paciente.cepsitced.com`;
+               const proxyAuthEmail = finalProxyData.correoReal.trim().toLowerCase();
 
         // console.log('SIGNUP EMAIL:', proxyAuthEmail);
         // console.log('SIGNUP DNI (APODERADO):', proxyDniClean);
@@ -796,7 +796,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
           fecha_nacimiento: finalProxyData.fechaNacimiento,
           direccion: toTitleCase(finalPatientData.direccion) ?? null,
           telefono: finalProxyData.telefono ?? null,
-          correo: finalProxyData.correoReal ?? null,
+          correo: proxyAuthEmail,
           nombres: toTitleCase(finalProxyData.nombres) ?? null,
           apellido_paterno: toTitleCase(finalProxyData.apellidoPaterno) ?? null,
           apellido_materno: toTitleCase(finalProxyData.apellidoMaterno) ?? null,
@@ -823,7 +823,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
           ocupacion: toTitleCase(finalPatientData.ocupacion) ?? null,
           direccion: toTitleCase(finalPatientData.direccion) ?? null,
           telefono: finalProxyData.telefono ?? null,
-          correo: null,
+          correo: proxyAuthEmail,
           nombres: toTitleCase(finalPatientData.nombres) ?? null,
           apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) ?? null,
           apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) ?? null,
@@ -1205,7 +1205,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                     <input
                       type="email"
                       placeholder="ejemplo@correo.com"
-                      value={patientData.correoReal}
+                      value={isProxy ? proxyData.correoReal : patientData.correoReal}
                       onChange={(e) => handlePatientChange('correoReal', e.target.value)}
                       disabled={isProxy}
                       required={!isProxy}
