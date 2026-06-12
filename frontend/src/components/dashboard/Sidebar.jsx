@@ -64,9 +64,7 @@ const Sidebar = ({ currentPath, onNavigate, onBookAppointment, isMobile = false 
       {/* Header */}
       <div className="px-6 pb-8 mb-4 border-b border-slate-100">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#003178] flex items-center justify-center text-white font-bold">
-            C
-          </div>
+          <img src="/logo-cepsitced.png" alt="Logo CEPSITCED" className="w-8 h-8 object-contain" />
           <div>
             <h1 className="text-lg font-bold text-[#003178]">CEPSITCED</h1>
             <p className="text-slate-500 text-xs">Portal Clínico</p>

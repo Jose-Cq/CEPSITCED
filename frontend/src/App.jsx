@@ -84,9 +84,7 @@ const LandingPage = ({ onOpenAuth }) => {
       <header className="fixed top-0 z-[100] w-full border-b bg-white/95 backdrop-blur-md px-6 shadow-sm">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between text-[#003178]">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-[#003178] flex items-center justify-center">
-              <span className="text-white font-bold text-xl">C</span>
-            </div>
+            <img src="/logo-cepsitced.png" alt="Logo CEPSITCED" className="h-10 w-10 object-contain" />
             <span className="text-2xl font-black tracking-tighter uppercase">CEPSITCED</span>
           </div>
           <nav className="hidden lg:flex items-center gap-8 font-bold text-xs text-gray-550 uppercase tracking-widest">
