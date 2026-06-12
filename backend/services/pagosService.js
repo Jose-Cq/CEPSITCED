@@ -1,21 +1,16 @@
-import { supabase } from '../../frontend/src/supabaseClient.js';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 /**
- * Fetches all active payment methods of the clinic.
+ * Obtiene los métodos de pago de la clínica.
  * @returns {Promise<Array|null>}
  */
 export const obtenerMetodosPagoClinica = async () => {
   try {
-    const { data, error } = await supabase
-      .from('metodos_pago_clinica')
-      .select('*')
-      .eq('activo', true)
-      .order('tipo', { ascending: true });
-
-    if (error) throw error;
-    return data || [];
-  } catch (error) {
-    console.error('Error loading clinic payment methods:', error);
+    const res = await fetch(`${API_URL}/api/pagos/metodos`);
+    if (!res.ok) throw new Error('Error al obtener métodos de pago desde la API');
+    return await res.json();
+  } catch (err) {
+    console.error('Error en obtenerMetodosPagoClinica:', err.message);
     return null;
   }
 };

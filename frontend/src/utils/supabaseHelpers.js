@@ -5,6 +5,7 @@ export {
   cerrarSesion,
   obtenerUltimoNumeroHC,
   registrarPerfil,
+  obtenerPerfilActual,
   verificarDuplicadoDNI,
   registrarPaciente,
   obtenerPacienteActual,

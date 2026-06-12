@@ -1,113 +1,69 @@
-import { supabase } from '../../frontend/src/supabaseClient.js';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 /**
- * Fetches all active locals.
+ * Obtiene todos los locales activos.
  * @returns {Promise<Array>}
  */
 export const obtenerLocalesActivos = async () => {
   try {
-    const { data, error } = await supabase
-      .from('locales')
-      .select('id, nombre, direccion, activo')
-      .eq('activo', true)
-      .order('nombre', { ascending: true });
-
-    if (error) throw error;
-    return data || [];
+    const res = await fetch(`${API_URL}/api/servicios/locales`);
+    if (!res.ok) throw new Error('Error al obtener locales desde la API');
+    return await res.json();
   } catch (err) {
-    console.error('Error in obtenerLocalesActivos:', err.message);
+    console.error('Error en obtenerLocalesActivos:', err.message);
     return [];
   }
 };
 
 /**
- * Fetches active services to show on the landing page, filtered optionally by localId.
- * Performs both local_id match and locales_ids array inclusion check.
+ * Obtiene servicios de landing filtrados por local.
  * @param {string} [localId] 
  * @returns {Promise<Array>}
  */
 export const obtenerServiciosLandingPorLocal = async (localId) => {
   try {
-    const { data: servs, error } = await supabase
-      .from('servicios')
-      .select('*')
-      .eq('activo', true)
-      .eq('mostrar_landing', true);
-
-    if (error) throw error;
-    if (!servs) return [];
-
-    // Filter by localId in memory if localId is provided
-    let filtered = servs;
-    if (localId) {
-      filtered = servs.filter(s => {
-        const matchesDirect = s.local_id === localId;
-        const matchesArray = Array.isArray(s.locales_ids) && s.locales_ids.includes(localId);
-        return matchesDirect || matchesArray;
-      });
-    }
-
-    // Sort by order/name
-    return filtered.sort((a, b) => {
-      if (a.orden !== null && a.orden !== undefined && b.orden !== null && b.orden !== undefined) {
-        return a.orden - b.orden;
-      }
-      if (a.orden !== null && a.orden !== undefined) return -1;
-      if (b.orden !== null && b.orden !== undefined) return 1;
-      return (a.nombre_servicio || '').localeCompare(b.nombre_servicio || '');
-    });
+    const url = localId 
+      ? `${API_URL}/api/servicios/landing?localId=${localId}`
+      : `${API_URL}/api/servicios/landing`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Error al obtener servicios por local desde la API');
+    return await res.json();
   } catch (err) {
-    console.error('Error in obtenerServiciosLandingPorLocal:', err.message);
+    console.error('Error en obtenerServiciosLandingPorLocal:', err.message);
     return [];
   }
 };
 
 /**
- * Fetches all active services. Used in scheduling.
+ * Obtiene todos los servicios activos.
  * @returns {Promise<{success: boolean, data?: Array, error?: string}>}
  */
 export const obtenerServicios = async () => {
   try {
-    const { data, error } = await supabase
-      .from('servicios')
-      .select('*')
-      .eq('activo', true);
-
-    if (error) throw error;
-    return { success: true, data };
-  } catch (error) {
-    return { success: false, error: error.message };
+    const res = await fetch(`${API_URL}/api/servicios`);
+    if (!res.ok) throw new Error('Error al obtener servicios desde la API');
+    return await res.json();
+  } catch (err) {
+    console.error('Error en obtenerServicios:', err.message);
+    return { success: false, error: err.message };
   }
 };
 
 /**
- * Fetches all active packages for a given service.
+ * Obtiene paquetes para un servicio.
  * @param {string} servicioId 
  * @returns {Promise<{success: boolean, data?: Array, error?: string}>}
  */
 export const obtenerPaquetes = async (servicioId) => {
   if (!servicioId) {
-    console.warn('obtenerPaquetes llamado sin servicioId válido.');
     return { success: true, data: [] };
   }
   try {
-    const { data, error } = await supabase
-      .from('paquetes_catalogo')
-      .select('*')
-      .eq('servicio_id', servicioId)
-      .eq('activo', true);
-
-    if (error) {
-      console.error('Error Supabase en obtenerPaquetes:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      });
-      throw error;
-    }
-    return { success: true, data };
-  } catch (error) {
-    return { success: false, error: error.message };
+    const res = await fetch(`${API_URL}/api/servicios/${servicioId}/paquetes`);
+    if (!res.ok) throw new Error('Error al obtener paquetes desde la API');
+    return await res.json();
+  } catch (err) {
+    console.error('Error en obtenerPaquetes:', err.message);
+    return { success: false, error: err.message };
   }
 };

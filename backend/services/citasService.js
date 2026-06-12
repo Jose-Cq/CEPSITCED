@@ -1,272 +1,163 @@
 import { supabase } from '../../frontend/src/supabaseClient.js';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+const getHeaders = async () => {
+  const { data: { session } } = await supabase.auth.getSession();
+  const headers = {
+    'Content-Type': 'application/json'
+  };
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`;
+  }
+  return headers;
+};
+
 /**
- * Fetches all appointments for a given patient.
- * @param {string} pacienteId 
- * @returns {Promise<{success: boolean, data?: Array, error?: string}>}
+ * Obtiene todas las citas de un paciente.
  */
 export const obtenerCitasPaciente = async (pacienteId) => {
   if (!pacienteId) {
-    console.warn('obtenerCitasPaciente llamado sin pacienteId válido.');
     return { success: true, data: [] };
   }
   try {
-    const { data, error } = await supabase
-      .from('citas')
-      .select('*, habitaciones(nombre, locales(nombre, direccion))')
-      .eq('paciente_id', pacienteId)
-      .order('fecha_cita', { ascending: false });
-
-    if (error) {
-      console.error('Error Supabase en obtenerCitasPaciente:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      });
-      throw error;
-    }
-    return { success: true, data };
+    const headers = await getHeaders();
+    const res = await fetch(`${API_URL}/api/citas/paciente/${pacienteId}`, {
+      headers
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Error al obtener citas del paciente');
+    return { success: true, data: result.data };
   } catch (error) {
+    console.error('Error en obtenerCitasPaciente:', error.message);
     return { success: false, error: error.message };
   }
 };
 
 /**
- * Creates a new appointment.
- * @param {Object} citaData 
- * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
+ * Crea una nueva cita.
  */
 export const crearCita = async (citaData) => {
   try {
-    const { data, error } = await supabase
-      .from('citas')
-      .insert([citaData])
-      .select()
-      .single();
-
-    if (error) throw error;
-    return { success: true, data };
+    const headers = await getHeaders();
+    const res = await fetch(`${API_URL}/api/citas`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(citaData)
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Error al crear la cita');
+    return { success: true, data: result.data };
   } catch (error) {
+    console.error('Error en crearCita:', error.message);
     return { success: false, error: error.message };
   }
 };
 
 /**
- * Fetches appointments for a specific day.
- * @param {string} fecha 
- * @returns {Promise<{success: boolean, data?: Array, error?: string}>}
+ * Obtiene las citas registradas en un día específico.
  */
 export const obtenerCitasDelDia = async (fecha) => {
   try {
-    const { data, error } = await supabase
-      .from('citas')
-      .select('psicologa_nombre, hora_inicio, hora_fin')
-      .eq('fecha_cita', fecha)
-      .neq('estado_cita', 'cancelada');
-
-    if (error) throw error;
-    return { success: true, data };
+    const res = await fetch(`${API_URL}/api/citas/dia?fecha=${fecha}`);
+    if (!res.ok) throw new Error('Error al obtener citas del día');
+    return await res.json();
   } catch (error) {
+    console.error('Error en obtenerCitasDelDia:', error.message);
     return { success: false, error: error.message };
   }
 };
 
 /**
- * Fetches specialists/employees associated with a given service.
- * @param {string} servicioId 
- * @returns {Promise<{success: boolean, data?: Array, error?: string}>}
+ * Obtiene las psicólogas activas asociadas a un servicio.
  */
 export const obtenerPsicologasPorServicio = async (servicioId) => {
   if (!servicioId) {
-    console.warn('obtenerPsicologasPorServicio llamado sin servicioId válido.');
     return { success: true, data: [] };
   }
   try {
-    const { data: psRelations, error: relError } = await supabase
-      .from('psicologo_servicio')
-      .select('psicologo_id')
-      .eq('servicio_id', servicioId);
-
-    if (relError) {
-      console.error('Error Supabase en obtenerPsicologasPorServicio (relaciones):', {
-        message: relError.message,
-        details: relError.details,
-        hint: relError.hint,
-        code: relError.code
-      });
-      throw relError;
-    }
-    if (!psRelations || psRelations.length === 0) return { success: true, data: [] };
-
-    const psicologoIds = psRelations.map(r => r.psicologo_id);
-
-    const { data: employees, error: empError } = await supabase
-      .from('empleados')
-      .select('*')
-      .in('id', psicologoIds)
-      .eq('activo', true);
-
-    if (empError) {
-      console.error('Error Supabase en obtenerPsicologasPorServicio (empleados):', {
-        message: empError.message,
-        details: empError.details,
-        hint: empError.hint,
-        code: empError.code
-      });
-      throw empError;
-    }
-
-    const mappedData = employees ? employees.map(emp => ({
-      ...emp,
-      nombres_apellidos: `${emp.nombres || ''} ${emp.apellido_paterno || ''} ${emp.apellido_materno || ''}`.trim()
-    })) : [];
-
-    return { success: true, data: mappedData };
+    const res = await fetch(`${API_URL}/api/citas/psicologas-servicio/${servicioId}`);
+    if (!res.ok) throw new Error('Error al obtener psicólogas por servicio');
+    return await res.json();
   } catch (error) {
+    console.error('Error en obtenerPsicologasPorServicio:', error.message);
     return { success: false, error: error.message };
   }
 };
 
 /**
- * Fetches employee schedules based on therapist, date and modality.
- * @param {string} psicologoId 
- * @param {string} fecha 
- * @param {string} modality 
- * @returns {Promise<{success: boolean, data?: Array, error?: string}>}
+ * Obtiene los horarios programados de una psicóloga en una fecha y modalidad dadas.
  */
 export const obtenerHorariosPsicologas = async (psicologoId, fecha, modalidad) => {
   if (!psicologoId) {
-    console.warn('obtenerHorariosPsicologas llamado sin psicologoId válido.');
     return { success: true, data: [] };
   }
   try {
-    let query = supabase
-      .from('horarios_empleados')
-      .select('*')
-      .eq('empleado_id', psicologoId);
+    let queryParams = `psicologoId=${psicologoId}`;
+    if (fecha) queryParams += `&fecha=${fecha}`;
+    if (modalidad) queryParams += `&modalidad=${modalidad}`;
 
-    if (fecha) {
-      query = query.eq('fecha', fecha);
-    }
-
-    if (modalidad) {
-      query = query.eq('modalidad', modalidad);
-    }
-
-    const { data, error } = await query;
-    if (error) {
-      console.error('Error Supabase en obtenerHorariosPsicologas:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      });
-      throw error;
-    }
-    return { success: true, data };
+    const res = await fetch(`${API_URL}/api/citas/horarios-psicologas?${queryParams}`);
+    if (!res.ok) throw new Error('Error al obtener horarios de psicólogas');
+    return await res.json();
   } catch (error) {
+    console.error('Error en obtenerHorariosPsicologas:', error.message);
     return { success: false, error: error.message };
   }
 };
 
 /**
- * Fetches non-canceled appointments for a specific therapist on a date.
- * @param {string} psicologoId 
- * @param {string} fecha 
- * @returns {Promise<{success: boolean, data?: Array, error?: string}>}
+ * Obtiene las citas de una psicóloga en una fecha específica.
  */
 export const obtenerCitasPsicologa = async (psicologoId, fecha) => {
-  if (!psicologoId) {
-    console.warn('obtenerCitasPsicologa llamado sin psicologoId válido.');
+  if (!psicologoId || !fecha) {
     return { success: true, data: [] };
   }
   try {
-    const { data, error } = await supabase
-      .from('citas')
-      .select('*')
-      .eq('psicologo_id', psicologoId)
-      .eq('fecha_cita', fecha)
-      .neq('estado_cita', 'cancelada');
-
-    if (error) {
-      console.error('Error Supabase en obtenerCitasPsicologa:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      });
-      throw error;
-    }
-    return { success: true, data };
+    const res = await fetch(`${API_URL}/api/citas/citas-psicologa?psicologoId=${psicologoId}&fecha=${fecha}`);
+    if (!res.ok) throw new Error('Error al obtener citas de psicóloga');
+    return await res.json();
   } catch (error) {
+    console.error('Error en obtenerCitasPsicologa:', error.message);
     return { success: false, error: error.message };
   }
 };
 
 /**
- * Fetches active rooms by local.
- * @param {string} localId 
- * @returns {Promise<Array|null>}
+ * Obtiene las habitaciones activas de un local.
  */
 export const obtenerHabitacionesPorLocal = async (localId) => {
   if (!localId) {
-    console.warn('obtenerHabitacionesPorLocal llamado sin localId válido.');
     return [];
   }
   try {
-    const { data, error } = await supabase
-      .from('habitaciones')
-      .select('id, nombre, local_id, activo')
-      .eq('local_id', localId)
-      .eq('activo', true)
-      .order('nombre', { ascending: true });
-
-    if (error) {
-      console.error('Error Supabase en obtenerHabitacionesPorLocal:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      });
-      throw error;
-    }
-    return data || [];
+    const res = await fetch(`${API_URL}/api/citas/habitaciones/${localId}`);
+    if (!res.ok) throw new Error('Error al obtener habitaciones por local');
+    return await res.json();
   } catch (err) {
-    console.error('Error loading rooms by local:', err.message);
+    console.error('Error en obtenerHabitacionesPorLocal:', err.message);
     return null;
   }
 };
 
 /**
- * Cancels a specific appointment.
- * @param {string} citaId 
- * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
+ * Cancela una cita específica por su ID.
  */
 export const cancelarCita = async (citaId) => {
   if (!citaId) {
-    console.warn('cancelarCita llamado sin citaId válido.');
     return { success: false, error: 'ID de cita no proporcionado.' };
   }
   try {
-    const { data, error } = await supabase
-      .from('citas')
-      .update({ estado_cita: 'Cancelada' })
-      .eq('id', citaId)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error Supabase en cancelarCita:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      });
-      throw error;
-    }
-    return { success: true, data };
+    const headers = await getHeaders();
+    const res = await fetch(`${API_URL}/api/citas/${citaId}/cancelar`, {
+      method: 'PUT',
+      headers
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Error al cancelar la cita');
+    return { success: true, data: result.data };
   } catch (error) {
+    console.error('Error en cancelarCita:', error.message);
     return { success: false, error: error.message };
   }
 };

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
+import { obtenerPerfilActual, obtenerPacienteActual, obtenerPacientesAsociados } from '../utils/supabaseHelpers';
 
 const PacienteContext = createContext(null);
 
@@ -25,20 +26,14 @@ export const PacienteProvider = ({ children }) => {
         return;
       }
 
-      const userId = session.user.id;
-
-      // 2. Consulta 1: Obtener el perfil de la cuenta de usuario (perfiles)
-      const { data: perfilAcc, error: errPerfil } = await supabase
-        .from('perfiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (errPerfil) throw errPerfil;
+      // 2. Consulta 1: Obtener el perfil de la cuenta de usuario (perfiles) desde la API
+      const resPerfil = await obtenerPerfilActual();
+      if (!resPerfil.success) throw new Error(resPerfil.error);
+      const perfilAcc = resPerfil.data;
 
       // Si por retraso de sincronización tras registro no encuentra el perfil, reintentar
       if (!perfilAcc && retryCount < 3) {
-        console.log(`Perfil de cuenta no encontrado en Supabase. Reintentando... (${retryCount + 1}/3)`);
+        console.log(`Perfil de cuenta no encontrado en la API. Reintentando... (${retryCount + 1}/3)`);
         isRetrying = true;
         setTimeout(() => cargarDatos(retryCount + 1), 1000);
         return;
@@ -46,25 +41,19 @@ export const PacienteProvider = ({ children }) => {
 
       setPerfilUsuario(perfilAcc);
 
-      // 3. Consulta 2: Obtener el registro clínico propio del usuario (pacientes)
-      const { data: clinicoPropio, error: errClinico } = await supabase
-        .from('pacientes')
-        .select('*')
-        .eq('id_perfil_propio', userId)
-        .maybeSingle();
-
-      if (errClinico) throw errClinico;
+      // 3. Consulta 2: Obtener el registro clínico propio del usuario (pacientes) desde la API
+      const resClinico = await obtenerPacienteActual();
+      if (!resClinico.success) throw new Error(resClinico.error);
+      const clinicoPropio = resClinico.data;
       setPerfilClinicoPropio(clinicoPropio);
 
-      // 4. Consulta 3: Obtener los perfiles dependientes/familiares (pacientes)
-      const { data: dependientes, error: errDependientes } = await supabase
-        .from('pacientes')
-        .select('*')
-        .eq('id_apoderado', userId)
-        .is('id_perfil_propio', null);
-
-      if (errDependientes) throw errDependientes;
-      setPerfilesDependientes(dependientes || []);
+      // 4. Consulta 3: Obtener los perfiles dependientes/familiares (pacientes) desde la API
+      const resDependientes = await obtenerPacientesAsociados();
+      if (!resDependientes.success) throw new Error(resDependientes.error);
+      const dependientesCompleto = resDependientes.data || [];
+      // Filtrar dependientes reales (id_perfil_propio es nulo)
+      const dependientes = dependientesCompleto.filter(d => !d.id_perfil_propio);
+      setPerfilesDependientes(dependientes);
 
       // 5. Validar que exista al menos algún registro clínico (propio o dependientes)
       // Si la carga terminó y no hay ningún registro en pacientes, lanzar el mensaje específico

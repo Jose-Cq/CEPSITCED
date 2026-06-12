@@ -1,62 +1,46 @@
-import { supabase } from '../../frontend/src/supabaseClient.js';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 /**
- * Fetches active slides for the landing carousel, ordered by "orden".
- * Handles loading/error fallback by returning empty array.
+ * Obtiene los slides activos para el carrusel de la landing.
  * @returns {Promise<Array>}
  */
 export const obtenerCarruselLanding = async () => {
   try {
-    const { data, error } = await supabase
-      .from('landing_carousel')
-      .select('*')
-      .eq('activo', true)
-      .order('orden', { ascending: true });
-
-    if (error) throw error;
-    return data || [];
+    const res = await fetch(`${API_URL}/api/landing/carousel`);
+    if (!res.ok) throw new Error('Error al obtener carrusel desde la API');
+    return await res.json();
   } catch (err) {
-    console.error('Error in obtenerCarruselLanding:', err.message);
+    console.error('Error en obtenerCarruselLanding:', err.message);
     return [];
   }
 };
 
 /**
- * Fetches the landing configuration (mision, vision, mostrar_nosotros).
+ * Obtiene la configuración de la landing.
  * @returns {Promise<Object|null>}
  */
 export const obtenerConfiguracionLanding = async () => {
   try {
-    const { data, error } = await supabase
-      .from('landing_configuracion')
-      .select('*')
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw error;
-    return data || null;
+    const res = await fetch(`${API_URL}/api/landing/configuracion`);
+    if (!res.ok) throw new Error('Error al obtener configuración desde la API');
+    return await res.json();
   } catch (err) {
-    console.error('Error in obtenerConfiguracionLanding:', err.message);
+    console.error('Error en obtenerConfiguracionLanding:', err.message);
     return null;
   }
 };
 
 /**
- * Fetches active testimonials, ordered by "orden".
+ * Obtiene los testimonios activos para la landing.
  * @returns {Promise<Array>}
  */
 export const obtenerTestimoniosLanding = async () => {
   try {
-    const { data, error } = await supabase
-      .from('landing_testimonios')
-      .select('*')
-      .eq('activo', true)
-      .order('orden', { ascending: true });
-
-    if (error) throw error;
-    return data || [];
+    const res = await fetch(`${API_URL}/api/landing/testimonios`);
+    if (!res.ok) throw new Error('Error al obtener testimonios desde la API');
+    return await res.json();
   } catch (err) {
-    console.error('Error in obtenerTestimoniosLanding:', err.message);
+    console.error('Error en obtenerTestimoniosLanding:', err.message);
     return [];
   }
 };
