@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, useNavigate } from 'react-router-dom';
+import { Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import AuthModal from './components/AuthModal';
 import RegisterModal from './components/RegisterModal';
@@ -10,6 +10,7 @@ import Documents from './pages/Documents';
 import Profile from './pages/Profile';
 import DashboardHome from './pages/DashboardHome';
 import PsychologistDetailModal from './components/PsychologistDetailModal';
+import { PacienteProvider } from './hooks/usePacienteActual';
 
 // Backend Services & Components
 import HeroCarousel from './components/HeroCarousel';
@@ -141,19 +142,16 @@ const LandingPage = ({ onOpenAuth }) => {
         psychologist={selectedPsychologist}
       />
 
-      {/* Footer */}
-      <Footer />
     </div>
   );
 };
 
 // Componente principal con enrutamiento y autenticación
 const App = () => {
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Verificar sesión al cargar
   useEffect(() => {
@@ -171,57 +169,86 @@ const App = () => {
     return () => subscription?.unsubscribe();
   }, []);
 
-  // Manejar inicio de sesión exitoso
-  const handleLoginSuccess = () => {
-    setIsAuthOpen(false);
-    navigate('/dashboard/appointments');
-  };
-
   // Mostrar pantalla de carga mientras se verifica la sesión
   if (loading) {
     return (
       <div className="min-h-screen bg-[#f9f9fc] flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-[#003178] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500">Cargando...</p>
+          <p className="text-gray-550">Cargando...</p>
         </div>
       </div>
     );
   }
 
-  // Si hay sesión y no estamos en proceso de registro, mostrar dashboard
-  if (session && sessionStorage.getItem('is_registering') !== 'true') {
+  const isLoggedIn = session && sessionStorage.getItem('is_registering') !== 'true';
+
+  // Si está logueado, protegemos las rutas con PacienteProvider
+  if (isLoggedIn) {
     return (
-      <Routes>
-        <Route path="/dashboard" element={<DashboardHome />} />
-        <Route path="/dashboard/appointments" element={<Appointments />} />
-        <Route path="/dashboard/book-appointment" element={<BookAppointment />} />
-        <Route path="/dashboard/family" element={<Family />} />
-        <Route path="/dashboard/documents" element={<Documents />} />
-        <Route path="/dashboard/profile" element={<Profile />} />
-        <Route path="*" element={<DashboardHome />} />
-      </Routes>
+      <PacienteProvider>
+        <Routes>
+          <Route path="/dashboard" element={<DashboardHome />} />
+          <Route path="/dashboard/appointments" element={<Appointments />} />
+          <Route path="/dashboard/book-appointment" element={<BookAppointment />} />
+          <Route path="/dashboard/family" element={<Family />} />
+          <Route path="/dashboard/documents" element={<Documents />} />
+          <Route path="/dashboard/profile" element={<Profile />} />
+          {/* Redirecciones para rutas públicas y desconocidas cuando el usuario ya está autenticado */}
+          <Route path="/" element={<Navigate to="/dashboard/appointments" replace />} />
+          <Route path="/login" element={<Navigate to="/dashboard/appointments" replace />} />
+          <Route path="/register" element={<Navigate to="/dashboard/appointments" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard/appointments" replace />} />
+        </Routes>
+      </PacienteProvider>
     );
   }
 
-  // Si no hay sesión, mostrar landing page
+  // Si NO está logueado, las modales se manejan en base a la URL:
+  const isAuthOpen = location.pathname === '/login';
+  const isRegisterOpen = location.pathname === '/register';
+
+  const handleCloseAuth = () => {
+    navigate('/');
+  };
+
+  const handleCloseRegister = () => {
+    navigate('/');
+  };
+
+  const handleOpenRegister = () => {
+    navigate('/register');
+  };
+
+  const handleOpenAuth = () => {
+    navigate('/login');
+  };
+
+  const handleLoginSuccess = () => {
+    navigate('/dashboard/appointments');
+  };
+
   return (
     <>
       <AuthModal
         isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
-        onOpenRegister={() => {
-          setIsAuthOpen(false);
-          setIsRegisterOpen(true);
-        }}
+        onClose={handleCloseAuth}
+        onOpenRegister={handleOpenRegister}
         onLoginSuccess={handleLoginSuccess}
       />
       <RegisterModal
         isOpen={isRegisterOpen}
-        onClose={() => setIsRegisterOpen(false)}
+        onClose={handleCloseRegister}
       />
       <Routes>
-        <Route path="*" element={<LandingPage onOpenAuth={() => setIsAuthOpen(true)} />} />
+        {/* Rutas públicas disponibles cuando no hay sesión */}
+        <Route path="/" element={<LandingPage onOpenAuth={handleOpenAuth} />} />
+        <Route path="/login" element={<LandingPage onOpenAuth={handleOpenAuth} />} />
+        <Route path="/register" element={<LandingPage onOpenAuth={handleOpenAuth} />} />
+        {/* Si intenta acceder al dashboard sin sesión, redirige a /login */}
+        <Route path="/dashboard/*" element={<Navigate to="/login" replace />} />
+        {/* Redirección para cualquier otra ruta desconocida */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
   );

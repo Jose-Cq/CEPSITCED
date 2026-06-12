@@ -64,6 +64,9 @@ const Profile = ({ onNavigate }) => {
 
   // Estado para la ficha clínica
   const [clinicalData, setClinicalData] = useState({
+    nombres: '',
+    apellido_paterno: '',
+    apellido_materno: '',
     genero: '',
     direccion: '',
     pais: 'Perú',
@@ -92,6 +95,9 @@ const Profile = ({ onNavigate }) => {
         : (perfilClinicoPropio.correo || '');
 
       setClinicalData({
+        nombres: perfilClinicoPropio.nombres || perfilUsuario?.nombres || '',
+        apellido_paterno: perfilClinicoPropio.apellido_paterno || perfilUsuario?.apellido_paterno || '',
+        apellido_materno: perfilClinicoPropio.apellido_materno || perfilUsuario?.apellido_materno || '',
         genero: perfilClinicoPropio.genero || '',
         direccion: perfilClinicoPropio.direccion || '',
         pais: perfilClinicoPropio.pais || 'Perú',
@@ -116,6 +122,9 @@ const Profile = ({ onNavigate }) => {
 
       setClinicalData(prev => ({
         ...prev,
+        nombres: perfilUsuario.nombres || '',
+        apellido_paterno: perfilUsuario.apellido_paterno || '',
+        apellido_materno: perfilUsuario.apellido_materno || '',
         telefono: perfilUsuario.telefono || '',
         correo: userEmail
       }));
@@ -180,8 +189,19 @@ const Profile = ({ onNavigate }) => {
     setSubmitError('');
     setSaving(true);
 
+    const toTitleCase = (value) => {
+      if (!value) return value;
+      return String(value)
+        .trim()
+        .toLowerCase()
+        .replace(/\b\p{L}/gu, char => char.toUpperCase());
+    };
+
     try {
       // Validaciones obligatorias
+      if (!clinicalData.nombres?.trim() || !clinicalData.apellido_paterno?.trim() || !clinicalData.apellido_materno?.trim()) {
+        throw new Error('Nombres, Apellido Paterno y Apellido Materno son campos obligatorios (*).');
+      }
       if (!clinicalData.genero || !clinicalData.direccion || !clinicalData.pais) {
         throw new Error('Género, Dirección y País son campos obligatorios (*).');
       }
@@ -208,6 +228,22 @@ const Profile = ({ onNavigate }) => {
 
       const telefonoCompleto = phoneNumber ? `${phonePrefix} ${phoneNumber.trim()}`.trim() : null;
 
+      // 1. Actualizar perfiles primero
+      const { error: errUpdatePerfil } = await supabase
+        .from('perfiles')
+        .update({
+          nombres: toTitleCase(clinicalData.nombres),
+          apellido_paterno: toTitleCase(clinicalData.apellido_paterno),
+          apellido_materno: toTitleCase(clinicalData.apellido_materno),
+          telefono: telefonoCompleto ?? (perfilUsuario?.telefono || ''),
+          correo: clinicalData.correo || (perfilUsuario?.correo || '')
+        })
+        .eq('id', user.id);
+
+      if (errUpdatePerfil) {
+        throw new Error(`Error al actualizar el perfil de usuario: ${errUpdatePerfil.message}`);
+      }
+
       // Buscar si existe un registro en pacientes con id_perfil_propio = user.id
       const { data: pacienteExistente, error: pacienteExistenteError } = await supabase
         .from('pacientes')
@@ -223,12 +259,10 @@ const Profile = ({ onNavigate }) => {
 
       if (pacienteIdToUpdate) {
         // --- CASO: ACTUALIZAR REGISTRO CLÍNICO EXISTENTE ---
-        // Validar campos obligatorios para actualización
-        if (!clinicalData.genero) throw new Error('El género es obligatorio.');
-        if (!clinicalData.direccion) throw new Error('La dirección es obligatoria.');
-        if (!clinicalData.pais) throw new Error('El país es obligatorio.');
-
         const res = await actualizarPaciente(pacienteIdToUpdate, {
+          nombres: toTitleCase(clinicalData.nombres) ?? null,
+          apellido_paterno: toTitleCase(clinicalData.apellido_paterno) ?? null,
+          apellido_materno: toTitleCase(clinicalData.apellido_materno) ?? null,
           genero: clinicalData.genero,
           direccion: clinicalData.direccion ?? null,
           pais: clinicalData.pais ?? null,
@@ -257,20 +291,14 @@ const Profile = ({ onNavigate }) => {
         // Validar obligatorios antes de insertar
         if (!numeroHC) throw new Error('Error al generar la Historia Clínica.');
         if (!perfilUsuario.dni) throw new Error('El DNI del usuario es obligatorio.');
-        if (!perfilUsuario.nombres) throw new Error('Los nombres del usuario son obligatorios.');
-        if (!perfilUsuario.apellido_paterno) throw new Error('El apellido paterno del usuario es obligatorio.');
-        if (!perfilUsuario.apellido_materno) throw new Error('El apellido materno del usuario es obligatorio.');
         if (!perfilUsuario.fecha_nacimiento) throw new Error('La fecha de nacimiento del usuario es obligatoria.');
-        if (!clinicalData.genero) throw new Error('El género es obligatorio.');
-        if (!clinicalData.direccion) throw new Error('La dirección es obligatoria.');
-        if (!clinicalData.pais) throw new Error('El país es obligatorio.');
 
         const res = await registrarPaciente({
           numero_hc: numeroHC,
           dni: perfilUsuario.dni,
-          nombres: perfilUsuario.nombres ?? null,
-          apellido_paterno: perfilUsuario.apellido_paterno ?? null,
-          apellido_materno: perfilUsuario.apellido_materno ?? null,
+          nombres: toTitleCase(clinicalData.nombres) ?? null,
+          apellido_paterno: toTitleCase(clinicalData.apellido_paterno) ?? null,
+          apellido_materno: toTitleCase(clinicalData.apellido_materno) ?? null,
           fecha_nacimiento: perfilUsuario.fecha_nacimiento,
           genero: clinicalData.genero,
           direccion: clinicalData.direccion ?? null,
@@ -400,6 +428,60 @@ const Profile = ({ onNavigate }) => {
                     {submitError}
                   </div>
                 )}
+
+                {/* Subsección: Datos Personales */}
+                <div className="space-y-4">
+                  <h3 className="text-xs font-bold text-[#003178] uppercase tracking-widest border-b pb-2">
+                    Datos Personales
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nombres *</label>
+                      {isEditing ? (
+                        <input
+                          required
+                          type="text"
+                          value={clinicalData.nombres}
+                          onChange={e => handleFieldChange('nombres', e.target.value)}
+                          placeholder="Nombres"
+                          className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none"
+                        />
+                      ) : (
+                        <p className="p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm text-gray-750 font-semibold">{clinicalData.nombres || '-'}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ap. Paterno *</label>
+                      {isEditing ? (
+                        <input
+                          required
+                          type="text"
+                          value={clinicalData.apellido_paterno}
+                          onChange={e => handleFieldChange('apellido_paterno', e.target.value)}
+                          placeholder="Apellido Paterno"
+                          className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none"
+                        />
+                      ) : (
+                        <p className="p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm text-gray-750 font-semibold">{clinicalData.apellido_paterno || '-'}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ap. Materno *</label>
+                      {isEditing ? (
+                        <input
+                          required
+                          type="text"
+                          value={clinicalData.apellido_materno}
+                          onChange={e => handleFieldChange('apellido_materno', e.target.value)}
+                          placeholder="Apellido Materno"
+                          className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none"
+                        />
+                      ) : (
+                        <p className="p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm text-gray-750 font-semibold">{clinicalData.apellido_materno || '-'}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
                 {/* Subsección: Datos Clínicos */}
                 <div className="space-y-4">

@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 
-export const usePacienteActual = () => {
+const PacienteContext = createContext(null);
+
+export const PacienteProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [perfilUsuario, setPerfilUsuario] = useState(null); // perfiles table record
@@ -100,12 +102,26 @@ export const usePacienteActual = () => {
     cargarDatos();
   }, [cargarDatos]);
 
-  return {
-    loading,
-    error,
-    perfilUsuario,
-    perfilClinicoPropio,
-    perfilesDependientes,
-    refetch
-  };
+  return (
+    <PacienteContext.Provider
+      value={{
+        loading,
+        error,
+        perfilUsuario,
+        perfilClinicoPropio,
+        perfilesDependientes,
+        refetch
+      }}
+    >
+      {children}
+    </PacienteContext.Provider>
+  );
+};
+
+export const usePacienteActual = () => {
+  const context = useContext(PacienteContext);
+  if (!context) {
+    throw new Error('usePacienteActual debe usarse dentro de un PacienteProvider');
+  }
+  return context;
 };

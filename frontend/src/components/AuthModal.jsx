@@ -62,7 +62,7 @@ const AuthModal = ({ isOpen, onClose, onOpenRegister, onLoginSuccess }) => {
       ></div>
 
       {/* Contenedor Principal Split Screen */}
-      <div className="relative w-full max-w-6xl h-[700px] grid grid-cols-1 lg:grid-cols-2 bg-white rounded-[2.5rem] shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-6xl h-auto lg:h-[700px] max-h-[90vh] lg:max-h-none grid grid-cols-1 lg:grid-cols-2 bg-white rounded-[2rem] lg:rounded-[2.5rem] shadow-2xl overflow-y-auto lg:overflow-hidden">
 
         {/* LADO IZQUIERDO: BRANDING (AZUL) */}
         <div className="hidden lg:flex flex-col justify-between p-12 text-white relative bg-[#003178]">
@@ -86,26 +86,26 @@ const AuthModal = ({ isOpen, onClose, onOpenRegister, onLoginSuccess }) => {
 
           <div className="relative z-10 flex gap-6 border-t border-white/20 pt-8">
             <div className="text-center">
-              <span className="material-symbols-outlined text-[#6cbdfe] block mb-1">calendar_month</span>
+              <span className="material-symbols-outlined text-[#6cbdfe] block mb-1 notranslate" translate="no">calendar_month</span>
               <span className="text-[9px] font-bold uppercase tracking-widest text-blue-100">Citas Online</span>
             </div>
             <div className="text-center">
-              <span className="material-symbols-outlined text-[#6cbdfe] block mb-1">folder_shared</span>
+              <span className="material-symbols-outlined text-[#6cbdfe] block mb-1 notranslate" translate="no">folder_shared</span>
               <span className="text-[9px] font-bold uppercase tracking-widest text-blue-100">Historias</span>
             </div>
           </div>
         </div>
 
         {/* LADO DERECHO: FORMULARIO DE LOGIN */}
-        <div className="flex flex-col p-8 md:p-14 bg-white relative justify-center">
+        <div className="flex flex-col p-6 sm:p-10 md:p-14 bg-white relative justify-center">
 
           {/* Botón Cerrar */}
           <button
             onClick={onClose}
-            className="absolute top-8 right-8 h-10 w-10 flex items-center justify-center rounded-full bg-gray-50 text-gray-400 hover:text-[#003178] transition-all"
+            className="absolute top-4 right-4 md:top-8 md:right-8 h-10 w-10 flex items-center justify-center rounded-full bg-gray-50 text-gray-400 hover:text-[#003178] transition-all z-10"
             aria-label="Cerrar modal"
           >
-            <span className="material-symbols-outlined font-bold">close</span>
+            <span className="material-symbols-outlined font-bold notranslate" translate="no">close</span>
           </button>
 
           <div className="max-w-sm mx-auto w-full">
@@ -116,7 +116,7 @@ const AuthModal = ({ isOpen, onClose, onOpenRegister, onLoginSuccess }) => {
 
             {error && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm flex items-center gap-2">
-                <span className="material-symbols-outlined text-red-500 text-[18px]">error</span>
+                <span className="material-symbols-outlined text-red-500 text-[18px] notranslate" translate="no">error</span>
                 {error}
               </div>
             )}
@@ -173,7 +173,7 @@ const AuthModal = ({ isOpen, onClose, onOpenRegister, onLoginSuccess }) => {
               >
                 {isLoading ? (
                   <>
-                    <span className="material-symbols-outlined animate-spin text-sm">sync</span>
+                    <span className="material-symbols-outlined animate-spin text-sm notranslate" translate="no">sync</span>
                     Iniciando sesión...
                   </>
                 ) : (

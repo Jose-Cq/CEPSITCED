@@ -21,7 +21,7 @@ const ValidatedInput = ({ placeholder, required, type, value, onChange, onInput,
           onClick={() => setShow(!show)}
           className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#003178] transition-colors"
         >
-          <span className="material-symbols-outlined text-sm">
+          <span className="material-symbols-outlined text-sm notranslate" translate="no">
             {show ? 'visibility_off' : 'visibility'}
           </span>
         </button>
