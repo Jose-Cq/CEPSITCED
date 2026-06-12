@@ -1,0 +1,574 @@
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.pacientes (
+  id_paciente uuid NOT NULL DEFAULT gen_random_uuid(),
+  numero_hc character varying NOT NULL UNIQUE,
+  dni character varying NOT NULL UNIQUE,
+  genero character varying NOT NULL,
+  fecha_nacimiento date NOT NULL,
+  lugar_familia character varying,
+  estado_civil character varying,
+  grado_instruccion character varying,
+  ocupacion character varying,
+  direccion character varying,
+  telefono character varying,
+  correo character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  nombres character varying,
+  apellido_paterno character varying,
+  apellido_materno character varying,
+  pais character varying,
+  departamento character varying,
+  provincia character varying,
+  distrito character varying,
+  estado_cuenta character varying NOT NULL DEFAULT 'INDEPENDIENTE'::character varying CHECK (estado_cuenta::text = ANY (ARRAY['INDEPENDIENTE'::character varying, 'STANDBY'::character varying]::text[])),
+  id_perfil_propio uuid,
+  id_apoderado uuid,
+  parentesco character varying,
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT pacientes_pkey PRIMARY KEY (id_paciente),
+  CONSTRAINT pacientes_id_perfil_propio_fkey FOREIGN KEY (id_perfil_propio) REFERENCES public.perfiles(id),
+  CONSTRAINT pacientes_id_apoderado_fkey FOREIGN KEY (id_apoderado) REFERENCES public.perfiles(id)
+);
+CREATE TABLE public.empleados (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  auth_id uuid UNIQUE,
+  nombres character varying NOT NULL,
+  correo character varying NOT NULL UNIQUE,
+  dni character varying UNIQUE,
+  telefono character varying,
+  fecha_nacimiento date,
+  rol_sistema character varying NOT NULL,
+  tiempo_vigente character varying,
+  activo boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  apellido_paterno character varying,
+  apellido_materno character varying,
+  fecha_inicio date,
+  fecha_fin date,
+  CONSTRAINT empleados_pkey PRIMARY KEY (id),
+  CONSTRAINT empleados_auth_id_fkey FOREIGN KEY (auth_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.citas (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  paciente_id uuid,
+  psicologa_nombre character varying NOT NULL,
+  servicio character varying NOT NULL,
+  numero_sesion integer DEFAULT 1,
+  fecha_cita date NOT NULL,
+  hora_inicio time without time zone NOT NULL,
+  hora_fin time without time zone NOT NULL,
+  estado_cita character varying DEFAULT 'Pendiente'::character varying,
+  estado_pago character varying DEFAULT 'Pendiente'::character varying,
+  metodo_pago character varying,
+  monto numeric,
+  created_at timestamp with time zone DEFAULT now(),
+  paquete_id uuid,
+  comentario_paciente text,
+  psicologo_id uuid,
+  motivo_reprogramacion text,
+  motivo_cancelacion text,
+  motivo_ausencia text,
+  habitacion_id uuid,
+  modalidad character varying NOT NULL DEFAULT 'Presencial'::character varying,
+  CONSTRAINT citas_pkey PRIMARY KEY (id),
+  CONSTRAINT citas_paciente_id_fkey FOREIGN KEY (paciente_id) REFERENCES public.pacientes(id_paciente),
+  CONSTRAINT citas_paquete_id_fkey FOREIGN KEY (paquete_id) REFERENCES public.paquetes_adquiridos(id),
+  CONSTRAINT citas_psicologo_id_fkey FOREIGN KEY (psicologo_id) REFERENCES public.empleados(id),
+  CONSTRAINT citas_habitacion_fkey FOREIGN KEY (habitacion_id) REFERENCES public.habitaciones(id)
+);
+CREATE TABLE public.servicios (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  nombre_servicio character varying NOT NULL UNIQUE,
+  precio_sesion numeric,
+  activo boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  area_id uuid,
+  local_id uuid,
+  descripcion text,
+  icono character varying,
+  orden integer,
+  mostrar_landing boolean DEFAULT true,
+  locales_ids ARRAY DEFAULT '{}'::uuid[],
+  areas_ids ARRAY DEFAULT '{}'::uuid[],
+  capacidad_maxima integer NOT NULL DEFAULT 1,
+  precio_promocional numeric,
+  promocion_activa boolean NOT NULL DEFAULT false,
+  promocion_titulo character varying,
+  promo_descuento_porcentaje numeric,
+  promo_fecha_inicio date,
+  promo_fecha_fin date,
+  cobro_por_hora boolean DEFAULT false,
+  es_tramite boolean NOT NULL DEFAULT false,
+  CONSTRAINT servicios_pkey PRIMARY KEY (id),
+  CONSTRAINT servicios_area_fkey FOREIGN KEY (area_id) REFERENCES public.areas(id),
+  CONSTRAINT servicios_local_fkey FOREIGN KEY (local_id) REFERENCES public.locales(id)
+);
+CREATE TABLE public.paquetes_catalogo (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  servicio_id uuid,
+  nombre_paquete character varying NOT NULL,
+  cantidad_sesiones integer NOT NULL,
+  incluye_informe boolean DEFAULT false,
+  precio_total numeric NOT NULL,
+  activo boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  descripcion text,
+  locales_ids ARRAY DEFAULT '{}'::uuid[],
+  areas_ids ARRAY DEFAULT '{}'::uuid[],
+  precio_promocional numeric,
+  promocion_activa boolean NOT NULL DEFAULT false,
+  promocion_titulo character varying,
+  capacidad_maxima integer DEFAULT 1,
+  promo_descuento_porcentaje numeric,
+  promo_fecha_inicio date,
+  promo_fecha_fin date,
+  cobro_por_hora boolean DEFAULT false,
+  CONSTRAINT paquetes_catalogo_pkey PRIMARY KEY (id),
+  CONSTRAINT paquetes_catalogo_servicio_id_fkey FOREIGN KEY (servicio_id) REFERENCES public.servicios(id)
+);
+CREATE TABLE public.paquetes_adquiridos (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  paciente_id uuid,
+  servicio_id uuid,
+  paquete_catalogo_id uuid,
+  nombre_paquete_snapshot character varying,
+  sesiones_totales integer NOT NULL,
+  sesiones_disponibles integer NOT NULL,
+  incluye_informe boolean DEFAULT false,
+  monto_pagado numeric NOT NULL,
+  metodo_pago character varying NOT NULL,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT paquetes_adquiridos_pkey PRIMARY KEY (id),
+  CONSTRAINT paquetes_adquiridos_paciente_id_fkey FOREIGN KEY (paciente_id) REFERENCES public.pacientes(id_paciente),
+  CONSTRAINT paquetes_adquiridos_servicio_id_fkey FOREIGN KEY (servicio_id) REFERENCES public.servicios(id),
+  CONSTRAINT paquetes_adquiridos_paquete_catalogo_id_fkey FOREIGN KEY (paquete_catalogo_id) REFERENCES public.paquetes_catalogo(id)
+);
+CREATE TABLE public.tramites_documentales (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  paciente_id uuid,
+  servicio_id uuid,
+  tipo_documento character varying NOT NULL DEFAULT 'Informe Psicológico'::character varying,
+  monto_pagado numeric DEFAULT 0,
+  estado_pago character varying DEFAULT 'Pendiente'::character varying,
+  modalidad_entrega character varying NOT NULL,
+  fecha_recojo date,
+  hora_recojo time without time zone,
+  paquete_origen_id uuid,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT tramites_documentales_pkey PRIMARY KEY (id),
+  CONSTRAINT tramites_documentales_paciente_id_fkey FOREIGN KEY (paciente_id) REFERENCES public.pacientes(id_paciente),
+  CONSTRAINT tramites_documentales_servicio_id_fkey FOREIGN KEY (servicio_id) REFERENCES public.servicios(id),
+  CONSTRAINT tramites_documentales_paquete_origen_id_fkey FOREIGN KEY (paquete_origen_id) REFERENCES public.paquetes_adquiridos(id)
+);
+CREATE TABLE public.psicologo_servicio (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  psicologo_id uuid,
+  servicio_id uuid,
+  CONSTRAINT psicologo_servicio_pkey PRIMARY KEY (id),
+  CONSTRAINT psicologo_servicio_psicologo_id_fkey FOREIGN KEY (psicologo_id) REFERENCES public.empleados(id),
+  CONSTRAINT psicologo_servicio_servicio_id_fkey FOREIGN KEY (servicio_id) REFERENCES public.servicios(id)
+);
+CREATE TABLE public.horarios_empleados (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  empleado_id uuid NOT NULL,
+  fecha date NOT NULL,
+  hora_inicio time without time zone NOT NULL,
+  hora_fin time without time zone NOT NULL,
+  tipo text NOT NULL DEFAULT 'laboral'::text CHECK (tipo = ANY (ARRAY['laboral'::text, 'salida'::text, 'otro'::text])),
+  disponible boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  motivo text,
+  hora_inicio_original time without time zone,
+  hora_fin_original time without time zone,
+  modalidad character varying NOT NULL DEFAULT 'Presencial'::character varying,
+  local_id uuid,
+  CONSTRAINT horarios_empleados_pkey PRIMARY KEY (id),
+  CONSTRAINT horarios_empleados_empleado_id_fkey FOREIGN KEY (empleado_id) REFERENCES public.empleados(id),
+  CONSTRAINT horarios_empleados_local_id_fkey FOREIGN KEY (local_id) REFERENCES public.locales(id)
+);
+CREATE TABLE public.perfiles (
+  id uuid NOT NULL,
+  dni character varying NOT NULL UNIQUE,
+  nombres character varying NOT NULL,
+  apellido_paterno character varying NOT NULL,
+  apellido_materno character varying NOT NULL,
+  fecha_nacimiento date NOT NULL,
+  telefono character varying NOT NULL,
+  correo character varying NOT NULL UNIQUE,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT perfiles_pkey PRIMARY KEY (id),
+  CONSTRAINT perfiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.notas_recepcion (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  titulo character varying NOT NULL,
+  motivo character varying,
+  contenido text NOT NULL,
+  fecha date NOT NULL DEFAULT CURRENT_DATE,
+  hora time without time zone NOT NULL DEFAULT CURRENT_TIME,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  autor_nombre character varying,
+  CONSTRAINT notas_recepcion_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.locales (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  nombre character varying NOT NULL UNIQUE,
+  direccion text,
+  activo boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT locales_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.areas (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  nombre character varying NOT NULL UNIQUE,
+  activo boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT areas_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.cargos (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  nombre character varying NOT NULL UNIQUE,
+  nivel_acceso integer DEFAULT 1,
+  activo boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT cargos_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.asignaciones_empleado (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  empleado_id uuid NOT NULL,
+  local_id uuid NOT NULL,
+  area_id uuid NOT NULL,
+  cargo_id uuid NOT NULL,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT asignaciones_empleado_pkey PRIMARY KEY (id),
+  CONSTRAINT asign_empleado_fkey FOREIGN KEY (empleado_id) REFERENCES public.empleados(id),
+  CONSTRAINT asign_local_fkey FOREIGN KEY (local_id) REFERENCES public.locales(id),
+  CONSTRAINT asign_area_fkey FOREIGN KEY (area_id) REFERENCES public.areas(id),
+  CONSTRAINT asign_cargo_fkey FOREIGN KEY (cargo_id) REFERENCES public.cargos(id)
+);
+CREATE TABLE public.informes_mensuales (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  empleado_id uuid NOT NULL,
+  archivo_url text NOT NULL,
+  mes integer NOT NULL CHECK (mes >= 1 AND mes <= 12),
+  anio integer NOT NULL,
+  estado character varying DEFAULT 'Enviado'::character varying CHECK (estado::text = ANY (ARRAY['Enviado'::character varying::text, 'Revisado'::character varying::text, 'Observado'::character varying::text])),
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT informes_mensuales_pkey PRIMARY KEY (id),
+  CONSTRAINT informes_empleado_fkey FOREIGN KEY (empleado_id) REFERENCES public.empleados(id)
+);
+CREATE TABLE public.actividades_empleado (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  empleado_id uuid NOT NULL,
+  fecha date NOT NULL,
+  hora_inicio time without time zone NOT NULL,
+  hora_fin time without time zone NOT NULL,
+  tarea character varying NOT NULL,
+  descripcion text,
+  estado character varying DEFAULT 'Programado'::character varying,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  local_id uuid,
+  grupo_actividad_id text,
+  CONSTRAINT actividades_empleado_pkey PRIMARY KEY (id),
+  CONSTRAINT act_empleado_fkey FOREIGN KEY (empleado_id) REFERENCES public.empleados(id),
+  CONSTRAINT actividades_empleado_local_id_fkey FOREIGN KEY (local_id) REFERENCES public.locales(id)
+);
+CREATE TABLE public.tarifas (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  servicio_id uuid NOT NULL,
+  cargo_id uuid NOT NULL,
+  precio numeric NOT NULL,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT tarifas_pkey PRIMARY KEY (id),
+  CONSTRAINT tarifas_servicio_fkey FOREIGN KEY (servicio_id) REFERENCES public.servicios(id),
+  CONSTRAINT tarifas_cargo_fkey FOREIGN KEY (cargo_id) REFERENCES public.cargos(id)
+);
+CREATE TABLE public.habitaciones (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  local_id uuid NOT NULL,
+  nombre character varying NOT NULL,
+  activo boolean DEFAULT true,
+  CONSTRAINT habitaciones_pkey PRIMARY KEY (id),
+  CONSTRAINT habitaciones_local_fkey FOREIGN KEY (local_id) REFERENCES public.locales(id)
+);
+CREATE TABLE public.asistencias_empleados (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  empleado_id uuid NOT NULL,
+  fecha date NOT NULL DEFAULT CURRENT_DATE,
+  hora_entrada time without time zone,
+  hora_salida time without time zone,
+  estado character varying NOT NULL DEFAULT 'Presente'::character varying,
+  justificacion text,
+  created_at timestamp with time zone DEFAULT now(),
+  evidencia text,
+  CONSTRAINT asistencias_empleados_pkey PRIMARY KEY (id),
+  CONSTRAINT asistencias_empleado_fkey FOREIGN KEY (empleado_id) REFERENCES public.empleados(id)
+);
+CREATE TABLE public.solicitudes_reprogramacion (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  cita_id uuid,
+  actividad_id uuid,
+  empleado_id uuid NOT NULL,
+  tipo character varying NOT NULL,
+  fecha_original date,
+  hora_inicio_original time without time zone,
+  hora_fin_original time without time zone,
+  nueva_fecha date NOT NULL,
+  nueva_hora_inicio time without time zone NOT NULL,
+  nueva_hora_fin time without time zone NOT NULL,
+  motivo text,
+  estado character varying NOT NULL DEFAULT 'Pendiente'::character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  archivo_url text,
+  CONSTRAINT solicitudes_reprogramacion_pkey PRIMARY KEY (id),
+  CONSTRAINT solicitudes_reprogramacion_cita_fkey FOREIGN KEY (cita_id) REFERENCES public.citas(id),
+  CONSTRAINT solicitudes_reprogramacion_actividad_fkey FOREIGN KEY (actividad_id) REFERENCES public.actividades_empleado(id),
+  CONSTRAINT solicitudes_reprogramacion_empleado_fkey FOREIGN KEY (empleado_id) REFERENCES public.empleados(id)
+);
+CREATE TABLE public.subpruebas (
+  abreviatura character varying NOT NULL,
+  nombre character varying NOT NULL,
+  descripcion text,
+  categoria character varying CHECK (categoria::text = ANY (ARRAY['Primaria'::character varying, 'Complementaria'::character varying]::text[])),
+  es_cit boolean DEFAULT false,
+  orden_administracion integer UNIQUE,
+  CONSTRAINT subpruebas_pkey PRIMARY KEY (abreviatura)
+);
+CREATE TABLE public.puntajes_compuestos (
+  abreviatura character varying NOT NULL,
+  nombre character varying NOT NULL,
+  descripcion text,
+  tipo character varying CHECK (tipo::text = ANY (ARRAY['Escala Total'::character varying, 'Principal'::character varying, 'Secundario'::character varying]::text[])),
+  CONSTRAINT puntajes_compuestos_pkey PRIMARY KEY (abreviatura)
+);
+CREATE TABLE public.composicion_puntajes_compuestos (
+  puntaje_compuesto_abreviatura character varying NOT NULL,
+  subprueba_abreviatura character varying NOT NULL,
+  CONSTRAINT composicion_puntajes_compuestos_pkey PRIMARY KEY (puntaje_compuesto_abreviatura, subprueba_abreviatura),
+  CONSTRAINT composicion_puntajes_compuest_puntaje_compuesto_abreviatur_fkey FOREIGN KEY (puntaje_compuesto_abreviatura) REFERENCES public.puntajes_compuestos(abreviatura),
+  CONSTRAINT composicion_puntajes_compuestos_subprueba_abreviatura_fkey FOREIGN KEY (subprueba_abreviatura) REFERENCES public.subpruebas(abreviatura)
+);
+CREATE TABLE public.puntajes_proceso (
+  abreviatura character varying NOT NULL,
+  nombre character varying NOT NULL,
+  subprueba_abreviatura character varying,
+  CONSTRAINT puntajes_proceso_pkey PRIMARY KEY (abreviatura),
+  CONSTRAINT puntajes_proceso_subprueba_abreviatura_fkey FOREIGN KEY (subprueba_abreviatura) REFERENCES public.subpruebas(abreviatura)
+);
+CREATE TABLE public.mayores_secuencias (
+  abreviatura character varying NOT NULL,
+  nombre character varying NOT NULL,
+  subprueba_abreviatura character varying,
+  CONSTRAINT mayores_secuencias_pkey PRIMARY KEY (abreviatura),
+  CONSTRAINT mayores_secuencias_subprueba_abreviatura_fkey FOREIGN KEY (subprueba_abreviatura) REFERENCES public.subpruebas(abreviatura)
+);
+CREATE TABLE public.puntajes_errores (
+  abreviatura character varying NOT NULL,
+  nombre character varying NOT NULL,
+  subprueba_abreviatura character varying,
+  CONSTRAINT puntajes_errores_pkey PRIMARY KEY (abreviatura),
+  CONSTRAINT puntajes_errores_subprueba_abreviatura_fkey FOREIGN KEY (subprueba_abreviatura) REFERENCES public.subpruebas(abreviatura)
+);
+CREATE TABLE public.tipos_observacion (
+  id_observacion integer NOT NULL DEFAULT nextval('tipos_observacion_id_observacion_seq'::regclass),
+  nombre character varying NOT NULL UNIQUE,
+  CONSTRAINT tipos_observacion_pkey PRIMARY KEY (id_observacion)
+);
+CREATE TABLE public.observaciones_subprueba (
+  subprueba_abreviatura character varying NOT NULL,
+  id_observacion integer NOT NULL,
+  CONSTRAINT observaciones_subprueba_pkey PRIMARY KEY (subprueba_abreviatura, id_observacion),
+  CONSTRAINT observaciones_subprueba_subprueba_abreviatura_fkey FOREIGN KEY (subprueba_abreviatura) REFERENCES public.subpruebas(abreviatura),
+  CONSTRAINT observaciones_subprueba_id_observacion_fkey FOREIGN KEY (id_observacion) REFERENCES public.tipos_observacion(id_observacion)
+);
+CREATE TABLE public.wisc_evaluaciones (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  cita_id uuid NOT NULL,
+  paciente_id uuid NOT NULL,
+  psicologo_id uuid NOT NULL,
+  fecha_aplicacion date NOT NULL,
+  edad_anios integer NOT NULL,
+  edad_meses integer NOT NULL,
+  edad_dias integer NOT NULL,
+  observaciones_generales text,
+  created_at timestamp with time zone DEFAULT now(),
+  estado character varying DEFAULT 'En progreso'::character varying CHECK (estado::text = ANY (ARRAY['En progreso'::character varying, 'Pausada'::character varying, 'Completada'::character varying, 'Anulada'::character varying]::text[])),
+  config_nivel_significancia numeric DEFAULT 0.05 CHECK (config_nivel_significancia = ANY (ARRAY[0.01, 0.05, 0.10, 0.15])),
+  config_grupo_referencia character varying DEFAULT 'Muestra Total'::character varying CHECK (config_grupo_referencia::text = ANY (ARRAY['Muestra Total'::character varying, 'Nivel de Habilidad'::character varying]::text[])),
+  config_base_comparacion_indices character varying DEFAULT 'PIP'::character varying CHECK (config_base_comparacion_indices::text = ANY (ARRAY['PIP'::character varying, 'CIT'::character varying]::text[])),
+  config_base_comparacion_subpruebas character varying DEFAULT 'PPE-P'::character varying CHECK (config_base_comparacion_subpruebas::text = ANY (ARRAY['PPE-P'::character varying, 'PPE-C'::character varying]::text[])),
+  aplica_prorrateo_cit boolean DEFAULT false,
+  CONSTRAINT wisc_evaluaciones_pkey PRIMARY KEY (id),
+  CONSTRAINT wisc_evaluaciones_cita_fkey FOREIGN KEY (cita_id) REFERENCES public.citas(id),
+  CONSTRAINT wisc_evaluaciones_paciente_fkey FOREIGN KEY (paciente_id) REFERENCES public.pacientes(id_paciente),
+  CONSTRAINT wisc_evaluaciones_psicologo_fkey FOREIGN KEY (psicologo_id) REFERENCES public.empleados(id)
+);
+CREATE TABLE public.wisc_modificaciones (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  evaluacion_id uuid NOT NULL,
+  subprueba_abreviatura character varying NOT NULL,
+  tipo_modificacion character varying NOT NULL,
+  descripcion_detallada text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT wisc_modificaciones_pkey PRIMARY KEY (id),
+  CONSTRAINT wisc_modificaciones_evaluacion_fkey FOREIGN KEY (evaluacion_id) REFERENCES public.wisc_evaluaciones(id),
+  CONSTRAINT wisc_modificaciones_subprueba_fkey FOREIGN KEY (subprueba_abreviatura) REFERENCES public.subpruebas(abreviatura)
+);
+CREATE TABLE public.wisc_sustituciones_cit (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  evaluacion_id uuid NOT NULL,
+  subprueba_original character varying NOT NULL,
+  subprueba_sustituta character varying NOT NULL,
+  justificacion text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT wisc_sustituciones_cit_pkey PRIMARY KEY (id),
+  CONSTRAINT wisc_sustituciones_eval_fkey FOREIGN KEY (evaluacion_id) REFERENCES public.wisc_evaluaciones(id),
+  CONSTRAINT wisc_sustituciones_orig_fkey FOREIGN KEY (subprueba_original) REFERENCES public.subpruebas(abreviatura),
+  CONSTRAINT wisc_sustituciones_sust_fkey FOREIGN KEY (subprueba_sustituta) REFERENCES public.subpruebas(abreviatura)
+);
+CREATE TABLE public.wisc_resultados_subpruebas (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  evaluacion_id uuid NOT NULL,
+  subprueba_abreviatura character varying NOT NULL,
+  puntaje_bruto integer NOT NULL DEFAULT 0,
+  puntaje_escala integer,
+  estado_subprueba character varying DEFAULT 'Completada'::character varying CHECK (estado_subprueba::text = ANY (ARRAY['Completada'::character varying, 'Anulada'::character varying, 'Sustituida'::character varying]::text[])),
+  detalle_items jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT wisc_resultados_subpruebas_pkey PRIMARY KEY (id),
+  CONSTRAINT wisc_resultados_evaluacion_fkey FOREIGN KEY (evaluacion_id) REFERENCES public.wisc_evaluaciones(id),
+  CONSTRAINT wisc_resultados_subprueba_fkey FOREIGN KEY (subprueba_abreviatura) REFERENCES public.subpruebas(abreviatura)
+);
+CREATE TABLE public.wisc_resultados_compuestos (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  evaluacion_id uuid NOT NULL,
+  puntaje_compuesto_abreviatura character varying NOT NULL,
+  suma_puntajes_escala integer,
+  puntaje_compuesto integer,
+  rango_percentil integer,
+  intervalo_confianza character varying,
+  es_prorrateado boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT wisc_resultados_compuestos_pkey PRIMARY KEY (id),
+  CONSTRAINT wisc_res_comp_evaluacion_fkey FOREIGN KEY (evaluacion_id) REFERENCES public.wisc_evaluaciones(id),
+  CONSTRAINT wisc_res_comp_abreviatura_fkey FOREIGN KEY (puntaje_compuesto_abreviatura) REFERENCES public.puntajes_compuestos(abreviatura)
+);
+CREATE TABLE public.wisc_resultados_proceso (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  evaluacion_id uuid NOT NULL,
+  codigo_variable character varying NOT NULL,
+  categoria_variable character varying CHECK (categoria_variable::text = ANY (ARRAY['Puntaje de Proceso'::character varying, 'Mayor Secuencia'::character varying, 'Puntaje de Error'::character varying]::text[])),
+  puntaje_bruto integer NOT NULL,
+  puntaje_escala integer,
+  tasa_base character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT wisc_resultados_proceso_pkey PRIMARY KEY (id),
+  CONSTRAINT wisc_res_proc_evaluacion_fkey FOREIGN KEY (evaluacion_id) REFERENCES public.wisc_evaluaciones(id)
+);
+CREATE TABLE public.metodos_pago_clinica (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  tipo character varying NOT NULL CHECK (tipo::text = ANY (ARRAY['TRANSFERENCIA'::character varying, 'YAPE'::character varying]::text[])),
+  banco character varying,
+  moneda character varying DEFAULT 'Soles'::character varying,
+  numero_cuenta character varying,
+  cci character varying,
+  titular character varying NOT NULL,
+  numero_yape character varying,
+  qr_url text,
+  telefono_confirmacion character varying,
+  mensaje_confirmacion text,
+  activo boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT metodos_pago_clinica_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.landing_carousel (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  titulo character varying NOT NULL,
+  subtitulo text,
+  descripcion text,
+  imagen_url text,
+  boton_texto character varying DEFAULT 'Agendar cita'::character varying,
+  boton_accion character varying DEFAULT 'abrir_portal'::character varying,
+  orden integer DEFAULT 1,
+  activo boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT landing_carousel_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.feriados (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  nombre character varying NOT NULL,
+  fecha date NOT NULL UNIQUE,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT feriados_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.reglas_precios (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  servicio_id uuid,
+  paquete_catalogo_id uuid,
+  local_id uuid,
+  area_id uuid,
+  cargo_id uuid,
+  precio numeric,
+  descuento_porcentaje numeric,
+  promo_fecha_inicio date,
+  promo_fecha_fin date,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  grupo_id text,
+  CONSTRAINT reglas_precios_pkey PRIMARY KEY (id),
+  CONSTRAINT reglas_precios_servicio_id_fkey FOREIGN KEY (servicio_id) REFERENCES public.servicios(id),
+  CONSTRAINT reglas_precios_paquete_catalogo_id_fkey FOREIGN KEY (paquete_catalogo_id) REFERENCES public.paquetes_catalogo(id),
+  CONSTRAINT reglas_precios_local_id_fkey FOREIGN KEY (local_id) REFERENCES public.locales(id),
+  CONSTRAINT reglas_precios_area_id_fkey FOREIGN KEY (area_id) REFERENCES public.areas(id),
+  CONSTRAINT reglas_precios_cargo_id_fkey FOREIGN KEY (cargo_id) REFERENCES public.cargos(id)
+);
+CREATE TABLE public.landing_configuracion (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  mision_subtitulo character varying DEFAULT 'Nuestra Misión'::character varying,
+  mision_texto text DEFAULT 'Ofrecer servicios psicológicos de alta calidad y accesibles para promover el bienestar mental de las familias.'::text,
+  vision_subtitulo character varying DEFAULT 'Nuestra Visión'::character varying,
+  vision_texto text DEFAULT 'Ser el centro psicológico líder e innovador en salud emocional de nuestra comunidad.'::text,
+  mostrar_hero boolean DEFAULT true,
+  mostrar_nosotros boolean DEFAULT true,
+  mostrar_personal boolean DEFAULT true,
+  mostrar_testimonios boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT landing_configuracion_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.landing_personal (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  empleado_id uuid NOT NULL,
+  nro_cpsp character varying,
+  horario character varying,
+  modalidad character varying,
+  imagen_perfil_url text,
+  perfil_profesional text,
+  formacion_1 character varying,
+  formacion_2 character varying,
+  formacion_3 character varying,
+  formacion_4 character varying,
+  orden integer DEFAULT 1,
+  activo boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT landing_personal_pkey PRIMARY KEY (id),
+  CONSTRAINT landing_personal_empleado_fkey FOREIGN KEY (empleado_id) REFERENCES public.empleados(id)
+);
+CREATE TABLE public.landing_testimonios (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  nombre_ficticio character varying NOT NULL,
+  comentario text NOT NULL,
+  calificacion integer NOT NULL CHECK (calificacion >= 1 AND calificacion <= 5),
+  orden integer DEFAULT 1,
+  activo boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT landing_testimonios_pkey PRIMARY KEY (id)
+);
