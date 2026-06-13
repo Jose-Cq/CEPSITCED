@@ -2,7 +2,7 @@ export const GRADOS_INSTRUCCION = [
   "Sin Instrucción", "Educación Inicial", "Primaria Incompleta", "Primaria Completa",
   "Secundaria Incompleta", "Secundaria Completa", "Superior Técnico Incompleto",
   "Superior Técnico Completo", "Superior Universitario Incompleto",
-  "Superior Universitario Completo", "Postgrado (Maestría/Doctorado)"
+  "Superior Universitario Completo", "Posgrado"
 ];
 
 export const ESTADOS_CIVILES = [

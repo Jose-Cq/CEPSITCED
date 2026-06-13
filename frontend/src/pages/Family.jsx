@@ -14,11 +14,16 @@ import provincias from '../data/ubigeo_peru_2016_provincias.json';
 import distritos from '../data/ubigeo_peru_2016_distritos.json';
 
 const toTitleCase = (value) => {
-  if (!value) return value;
+  if (!value) return '';
   return String(value)
     .trim()
     .toLowerCase()
-    .replace(/\b\p{L}/gu, char => char.toUpperCase());
+    .replace(/(?:^|[\s\-])\p{L}/gu, char => char.toUpperCase());
+};
+
+const getTodayDate = () => {
+  const hoy = new Date();
+  return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
 };
 
 const FlagImage = ({ iso2, className = "w-5 h-3.5 object-cover rounded-sm border border-gray-200 shrink-0" }) => {
@@ -345,6 +350,9 @@ const Family = () => {
       if (!editMemberData.genero || !editMemberData.parentesco) {
         throw new Error('Género y Parentesco son campos obligatorios.');
       }
+      if (editMemberData.fecha_nacimiento && editMemberData.fecha_nacimiento > getTodayDate()) {
+        throw new Error('La fecha de nacimiento no puede ser una fecha futura.');
+      }
 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No autenticado');
@@ -540,11 +548,14 @@ const Family = () => {
       if (!newProfile.nombres || !newProfile.apellidoPaterno || !newProfile.apellidoMaterno || !newProfile.genero || !newProfile.fechaNacimiento || !newProfile.dni) {
         return 'Completa todos los campos obligatorios de datos personales (*).';
       }
+      if (newProfile.fechaNacimiento && newProfile.fechaNacimiento > getTodayDate()) {
+        return 'La fecha de nacimiento no puede ser una fecha futura.';
+      }
       if (newProfile.tipoDocumento === 'DNI' && newProfile.dni.length !== 8) {
         return 'El DNI debe tener exactamente 8 dígitos.';
       }
-      if (newProfile.tipoDocumento !== 'DNI' && newProfile.dni.length < 12) {
-        return 'El Carnet de extranjería debe tener al menos 12 caracteres.';
+      if (newProfile.tipoDocumento !== 'DNI' && (newProfile.dni.length < 8 || newProfile.dni.length > 12)) {
+        return 'El Carnet de extranjería debe tener entre 8 y 12 dígitos.';
       }
     }
     if (stepNum === 2) {
@@ -897,7 +908,7 @@ const Family = () => {
                       required
                       type="text"
                       value={newProfile.nombres}
-                      onChange={e => handleChange('nombres', e.target.value)}
+                      onChange={e => handleChange('nombres', e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]/g, ''))}
                       placeholder="Nombres"
                       className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none"
                     />
@@ -910,7 +921,7 @@ const Family = () => {
                         required
                         type="text"
                         value={newProfile.apellidoPaterno}
-                        onChange={e => handleChange('apellidoPaterno', e.target.value)}
+                        onChange={e => handleChange('apellidoPaterno', e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]/g, ''))}
                         placeholder="Apellido Paterno"
                         className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none"
                       />
@@ -921,7 +932,7 @@ const Family = () => {
                         required
                         type="text"
                         value={newProfile.apellidoMaterno}
-                        onChange={e => handleChange('apellidoMaterno', e.target.value)}
+                        onChange={e => handleChange('apellidoMaterno', e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]/g, ''))}
                         placeholder="Apellido Materno"
                         className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none"
                       />
@@ -949,6 +960,7 @@ const Family = () => {
                         type="date"
                         value={newProfile.fechaNacimiento}
                         onChange={e => handleChange('fechaNacimiento', e.target.value)}
+                        max={getTodayDate()}
                         className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none text-gray-600"
                       />
                     </div>
@@ -983,11 +995,9 @@ const Family = () => {
                         type="text"
                         value={newProfile.dni}
                         onChange={e => {
-                          if (newProfile.tipoDocumento === 'DNI') {
-                            handleLimitInput(e, 8, 'dni');
-                          } else {
-                            handleChange('dni', e.target.value.trim());
-                          }
+                          const limit = newProfile.tipoDocumento === 'DNI' ? 8 : 12;
+                          const val = e.target.value.replace(/\D/g, '');
+                          handleChange('dni', val.slice(0, limit));
                         }}
                         placeholder="Documento"
                         className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none"
@@ -1097,7 +1107,7 @@ const Family = () => {
                       <option value="Madre">Madre</option>
                       <option value="Padre">Padre</option>
                       <option value="Pareja">Pareja</option>
-                      <option value="Tutorado">Tutorado / Dependiente</option>
+                      <option value="Tutorado">Tutorado</option>
                       <option value="Otro">Otro familiar</option>
                     </select>
                   </div>
@@ -1240,7 +1250,7 @@ const Family = () => {
                         required
                         type="text"
                         value={editMemberData.nombres}
-                        onChange={e => handleEditFieldChange('nombres', e.target.value)}
+                        onChange={e => handleEditFieldChange('nombres', e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]/g, ''))}
                         className="w-full p-2.5 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none bg-white text-gray-750"
                       />
                     </div>
@@ -1250,7 +1260,7 @@ const Family = () => {
                         required
                         type="text"
                         value={editMemberData.apellido_paterno}
-                        onChange={e => handleEditFieldChange('apellido_paterno', e.target.value)}
+                        onChange={e => handleEditFieldChange('apellido_paterno', e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]/g, ''))}
                         className="w-full p-2.5 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none bg-white text-gray-750"
                       />
                     </div>
@@ -1260,7 +1270,7 @@ const Family = () => {
                         required
                         type="text"
                         value={editMemberData.apellido_materno}
-                        onChange={e => handleEditFieldChange('apellido_materno', e.target.value)}
+                        onChange={e => handleEditFieldChange('apellido_materno', e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]/g, ''))}
                         className="w-full p-2.5 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none bg-white text-gray-750"
                       />
                     </div>
@@ -1274,9 +1284,12 @@ const Family = () => {
                       className="w-full p-2.5 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none bg-white text-gray-700"
                     >
                       <option value="">Seleccione parentesco...</option>
+                      <option value="Hijo">Hijo / Hija</option>
                       <option value="Madre">Madre</option>
                       <option value="Padre">Padre</option>
-                      <option value="Tutor">Tutor / Curador</option>
+                      <option value="Pareja">Pareja</option>
+                      <option value="Tutor">Tutor</option>
+                      <option value="Tutorado">Tutorado</option>
                       <option value="Abuelo/a">Abuelo/a</option>
                       <option value="Hermano/a">Hermano/a</option>
                       <option value="Otro">Otro familiar</option>
@@ -1297,7 +1310,8 @@ const Family = () => {
                       type="date"
                       value={editMemberData.fecha_nacimiento}
                       onChange={e => handleEditFieldChange('fecha_nacimiento', e.target.value)}
-                      className="w-full p-2.5 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none bg-white text-gray-750"
+                      max={getTodayDate()}
+                      className="w-full p-2.5 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none bg-white text-gray-755"
                     />
                   </div>
                   <div>

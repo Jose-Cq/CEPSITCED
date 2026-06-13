@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import ValidatedInput from './ValidatedInput';
 import { GRADOS_INSTRUCCION, ESTADOS_CIVILES } from '../constants/formOptions';
 import { generarNumeroHC, calcularEdad } from '../utils/generateHC';
-import { registrarPaciente, registrarPerfil, verificarDuplicadoDNI, obtenerUltimoNumeroHC } from '../utils/supabaseHelpers';
+import { registrarPaciente, registrarPerfil, verificarDuplicadoDNI, obtenerUltimoNumeroHC, actualizarPaciente } from '../utils/supabaseHelpers';
 import { supabase } from '../supabaseClient';
 
 import countries from '../data/countries.json';
@@ -12,11 +12,16 @@ import provincias from '../data/ubigeo_peru_2016_provincias.json';
 import distritos from '../data/ubigeo_peru_2016_distritos.json';
 
 const toTitleCase = (value) => {
-  if (!value) return value;
+  if (!value) return '';
   return String(value)
     .trim()
     .toLowerCase()
-    .replace(/\b\p{L}/gu, char => char.toUpperCase());
+    .replace(/(?:^|[\s\-])\p{L}/gu, char => char.toUpperCase());
+};
+
+const isValidEmail = (email) => {
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  return emailRegex.test(email);
 };
 
 
@@ -61,7 +66,8 @@ const ComboBox = ({
   required = false,
   disabled = false,
   className = '',
-  id
+  id,
+  dropdownWidth
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -102,7 +108,8 @@ const ComboBox = ({
       const scrollX = window.scrollX;
       const scrollY = window.scrollY;
       const windowWidth = window.innerWidth;
-      const estimatedWidth = Math.max(rect.width, Math.min(360, windowWidth * 0.9));
+      const maxDropdownW = dropdownWidth ? parseInt(dropdownWidth) : 360;
+      const estimatedWidth = Math.max(rect.width, Math.min(maxDropdownW, windowWidth * 0.9));
       
       let left = rect.left + scrollX;
       if (rect.left + estimatedWidth > windowWidth) {
@@ -197,9 +204,9 @@ const ComboBox = ({
               position: 'absolute',
               top: `${coords.top}px`,
               left: `${coords.left}px`,
-              minWidth: `${coords.width}px`,
-              width: 'max-content',
-              maxWidth: 'min(360px, 90vw)'
+              minWidth: dropdownWidth ? undefined : `${coords.width}px`,
+              width: dropdownWidth || 'max-content',
+              maxWidth: dropdownWidth ? `min(${dropdownWidth}, 90vw)` : 'min(360px, 90vw)'
             }}
             className="bg-white border border-gray-200 rounded-2xl shadow-xl z-[99999] overflow-hidden flex flex-col max-h-64 transition-none animate-none"
           >
@@ -290,7 +297,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
     fechaNacimiento: '',
     edad: null,
     genero: '',
-    pais: '', // Inicia vacío por defecto
+    pais: 'Perú', // Inicia con Perú por defecto
     departamento: '',
     provincia: '',
     distrito: '',
@@ -323,6 +330,11 @@ const RegisterModal = ({ isOpen, onClose }) => {
   const [submitError, setSubmitError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+
+  const getTodayDate = () => {
+    const hoy = new Date();
+    return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+  };
 
   const getMaxDate = () => {
     const hoy = new Date();
@@ -393,7 +405,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
       fechaNacimiento: '',
       edad: null,
       genero: '',
-      pais: '',
+      pais: 'Perú',
       departamento: '',
       provincia: '',
       distrito: '',
@@ -445,6 +457,15 @@ const RegisterModal = ({ isOpen, onClose }) => {
   const handleLimitInput = (e, limit, setter) => {
     const value = e.target.value.replace(/\D/g, '');
     if (value.length <= limit) setter(value);
+  };
+
+  const handleNameChange = (field, rawValue, isPatient) => {
+    const cleaned = rawValue.replace(/[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]/g, '');
+    if (isPatient) {
+      handlePatientChange(field, cleaned);
+    } else {
+      handleProxyChange(field, cleaned);
+    }
   };
 
   const handlePatientChange = (field, value) => {
@@ -534,24 +555,22 @@ const RegisterModal = ({ isOpen, onClose }) => {
       return;
     }
 
+    const todayStr = getTodayDate();
+    if (finalPatientData.fechaNacimiento > todayStr) {
+      setSubmitError('La fecha de nacimiento no puede ser una fecha futura.');
+      return;
+    }
+
     const fechaNac = new Date(finalPatientData.fechaNacimiento);
     const añoNacimiento = fechaNac.getFullYear();
-    const añoActual = new Date().getFullYear();
-    if (añoNacimiento < 1900 || añoNacimiento > añoActual) {
+    if (añoNacimiento < 1900) {
       setSubmitError('Fecha de nacimiento no válida.');
       return;
     }
 
     // Validaciones de Documento del Paciente y Apoderado
-    const patientDniClean = finalPatientData.tipoDocumento === 'DNI'
-      ? String(finalPatientData.dni || '').replace(/\D/g, '')
-      : String(finalPatientData.dni || '').replace(/\s/g, '').toLowerCase();
-
-    const proxyDniClean = isProxy
-      ? (finalProxyData.tipoDocumento === 'DNI'
-          ? String(finalProxyData.dni || '').replace(/\D/g, '')
-          : String(finalProxyData.dni || '').replace(/\s/g, '').toLowerCase())
-      : '';
+    const patientDniClean = String(finalPatientData.dni || '').replace(/\D/g, '');
+    const proxyDniClean = isProxy ? String(finalProxyData.dni || '').replace(/\D/g, '') : '';
 
     if (!patientDniClean) {
       setSubmitError('El documento del paciente es obligatorio.');
@@ -561,6 +580,10 @@ const RegisterModal = ({ isOpen, onClose }) => {
       setSubmitError('El DNI del paciente debe tener exactamente 8 dígitos.');
       return;
     }
+    if (finalPatientData.tipoDocumento !== 'DNI' && (patientDniClean.length < 8 || patientDniClean.length > 12)) {
+      setSubmitError('El Carnet de extranjería del paciente debe tener entre 8 y 12 dígitos.');
+      return;
+    }
 
     // Validar modo apoderado
     if (isProxy) {
@@ -568,8 +591,19 @@ const RegisterModal = ({ isOpen, onClose }) => {
         setSubmitError('Completa los datos del apoderado.');
         return;
       }
-      if (finalProxyData.tipoDocumento === 'DNI' && proxyDniClean.length !== 8) {
-        setSubmitError('El DNI del apoderado debe tener exactamente 8 dígitos.');
+      const proxyDniLen = proxyDniClean.length;
+      if (proxyDniLen < 8 || proxyDniLen > 12) {
+        setSubmitError('El documento del apoderado debe tener entre 8 y 12 dígitos.');
+        return;
+      }
+      finalProxyData.tipoDocumento = proxyDniLen === 8 ? 'DNI' : 'Carnet de extranjería';
+      if (finalProxyData.fechaNacimiento > todayStr) {
+        setSubmitError('La fecha de nacimiento del apoderado no puede ser una fecha futura.');
+        return;
+      }
+      const proxyFechaNac = new Date(finalProxyData.fechaNacimiento);
+      if (proxyFechaNac.getFullYear() < 1900) {
+        setSubmitError('Fecha de nacimiento del apoderado no válida.');
         return;
       }
       if (!proxyPhoneFull) {
@@ -596,8 +630,8 @@ const RegisterModal = ({ isOpen, onClose }) => {
         setSubmitError('El género del apoderado es obligatorio.');
         return;
       }
-      if (!finalProxyData.correoReal || !finalProxyData.correoReal.includes('@')) {
-        setSubmitError('El correo electrónico del apoderado es obligatorio y debe ser válido.');
+      if (!finalProxyData.correoReal || !isValidEmail(finalProxyData.correoReal)) {
+        setSubmitError('El correo electrónico del apoderado es obligatorio y debe ser un correo válido.');
         return;
       }
     } else {
@@ -618,8 +652,8 @@ const RegisterModal = ({ isOpen, onClose }) => {
           return;
         }
       }
-      if (!finalPatientData.correoReal || !finalPatientData.correoReal.includes('@')) {
-        setSubmitError('El correo electrónico es obligatorio y debe ser válido.');
+      if (!finalPatientData.correoReal || !isValidEmail(finalPatientData.correoReal)) {
+        setSubmitError('El correo electrónico es obligatorio y debe ser un correo válido.');
         return;
       }
     }
@@ -640,10 +674,6 @@ const RegisterModal = ({ isOpen, onClose }) => {
       if (isProxy) {
         if (patientDniClean === proxyDniClean) {
           throw new Error('El DNI del apoderado y del paciente no pueden ser iguales.');
-        }
-
-        if (finalProxyData.tipoDocumento !== 'DNI' && proxyDniClean.length > 12) {
-          throw new Error('El Carnet de extranjería del apoderado no puede tener más de 12 caracteres.');
         }
 
         const proxyDniDup = await verificarDuplicadoDNI(proxyDniClean);
@@ -715,6 +745,9 @@ const RegisterModal = ({ isOpen, onClose }) => {
         if (pacienteExistente) {
           pacienteRes = await actualizarPaciente(pacienteExistente.id_paciente, {
             id_perfil_propio: authId,
+            nombres: toTitleCase(finalPatientData.nombres) || pacienteExistente.nombres,
+            apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) || pacienteExistente.apellido_paterno,
+            apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) || pacienteExistente.apellido_materno,
             telefono: finalPatientData.telefono || pacienteExistente.telefono,
             correo: authEmail,
             genero: finalPatientData.genero,
@@ -764,7 +797,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
         setTimeout(() => {
           resetForm();
           onClose();
-          window.location.href = '/dashboard/appointments';
+          window.location.href = '/dashboard';
         }, 3000);
 
       } else {
@@ -836,6 +869,9 @@ const RegisterModal = ({ isOpen, onClose }) => {
         if (apoderadoExistente) {
           apoderadoPacienteRes = await actualizarPaciente(apoderadoExistente.id_paciente, {
             id_perfil_propio: authId,
+            nombres: toTitleCase(finalProxyData.nombres) || apoderadoExistente.nombres,
+            apellido_paterno: toTitleCase(finalProxyData.apellidoPaterno) || apoderadoExistente.apellido_paterno,
+            apellido_materno: toTitleCase(finalProxyData.apellidoMaterno) || apoderadoExistente.apellido_materno,
             telefono: finalProxyData.telefono || apoderadoExistente.telefono,
             correo: proxyAuthEmail,
             genero: finalProxyData.genero,
@@ -884,6 +920,9 @@ const RegisterModal = ({ isOpen, onClose }) => {
             id_apoderado: authId,
             estado_cuenta: 'STANDBY',
             parentesco: toTitleCase(finalProxyData.parentesco) || pacienteExistente.parentesco,
+            nombres: toTitleCase(finalPatientData.nombres) || pacienteExistente.nombres,
+            apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) || pacienteExistente.apellido_paterno,
+            apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) || pacienteExistente.apellido_materno,
             telefono: finalProxyData.telefono || pacienteExistente.telefono,
             correo: proxyAuthEmail,
             genero: finalPatientData.genero,
@@ -930,7 +969,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
         setTimeout(() => {
           resetForm();
           onClose();
-          window.location.href = '/dashboard/appointments';
+          window.location.href = '/dashboard';
         }, 3000);
       }
     } catch (error) {
@@ -1017,7 +1056,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
   const parentescoOptions = [
     { value: 'Madre', label: 'Madre' },
     { value: 'Padre', label: 'Padre' },
-    { value: 'Tutor', label: 'Tutor / Curador' },
+    { value: 'Tutor', label: 'Tutor' },
     { value: 'Abuelo/a', label: 'Abuelo/a' },
     { value: 'Hermano/a', label: 'Hermano/a' },
     { value: 'Otro', label: 'Otro familiar' }
@@ -1071,7 +1110,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                 <div className="space-y-4">
                   <h3 className="text-[#6cbdfe] font-bold text-xs uppercase tracking-widest border-b pb-2">Datos del Paciente</h3>
 
-                  {/* Fila 1: Nombres, Apellido Paterno, Apellido Materno */}
+                  {/* 1. Nombres, 2. Apellido paterno, 3. Apellido materno */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nombres *</label>
@@ -1080,7 +1119,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                         type="text"
                         placeholder="Nombres"
                         value={patientData.nombres}
-                        onChange={(e) => handlePatientChange('nombres', e.target.value)}
+                        onChange={(e) => handleNameChange('nombres', e.target.value, true)}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px]"
                       />
                     </div>
@@ -1091,7 +1130,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                         type="text"
                         placeholder="Apellido Paterno"
                         value={patientData.apellidoPaterno}
-                        onChange={(e) => handlePatientChange('apellidoPaterno', e.target.value)}
+                        onChange={(e) => handleNameChange('apellidoPaterno', e.target.value, true)}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px]"
                       />
                     </div>
@@ -1102,43 +1141,48 @@ const RegisterModal = ({ isOpen, onClose }) => {
                         type="text"
                         placeholder="Apellido Materno"
                         value={patientData.apellidoMaterno}
-                        onChange={(e) => handlePatientChange('apellidoMaterno', e.target.value)}
+                        onChange={(e) => handleNameChange('apellidoMaterno', e.target.value, true)}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px]"
                       />
                     </div>
                   </div>
 
-                  {/* Fila 2: Tipo Documento, Número Documento, Fecha Nacimiento */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* 4. Nacionalidad, 5. DNI o CE */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Tipo Doc *</label>
+                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nacionalidad *</label>
                       <ComboBox
                         required
-                        options={tipoDocOptions}
-                        value={patientData.tipoDocumento}
-                        onChange={(val) => handlePatientChange('tipoDocumento', val)}
-                        placeholder="Tipo Doc *"
+                        searchable
+                        options={countryOptions}
+                        value={patientData.pais}
+                        onChange={handlePatientCountryChange}
+                        placeholder="Seleccione país"
+                        dropdownWidth="250px"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Doc. Nro *</label>
+                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                        {patientData.tipoDocumento === 'DNI' ? 'DNI *' : 'Carnet de extranjería *'}
+                      </label>
                       <input
                         required
                         type="text"
-                        placeholder="Documento"
+                        placeholder={patientData.tipoDocumento === 'DNI' ? 'DNI' : 'Documento extranjero'}
                         value={patientData.dni}
                         onChange={(e) => {
-                          if (patientData.tipoDocumento === 'DNI') {
-                            handleLimitInput(e, 8, (val) => handlePatientChange('dni', val));
-                          } else {
-                            const val = e.target.value.replace(/\s/g, '').slice(0, 12);
-                            handlePatientChange('dni', val);
-                          }
+                          const limit = patientData.tipoDocumento === 'DNI' ? 8 : 12;
+                          const val = e.target.value.replace(/\D/g, '');
+                          handlePatientChange('dni', val.slice(0, limit));
                         }}
                         maxLength={patientData.tipoDocumento === 'DNI' ? 8 : 12}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px]"
                       />
                     </div>
+                  </div>
+
+                  {/* 6. Fecha de nacimiento, 7. Género */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fec. Nac *</label>
                       <input
@@ -1147,21 +1191,10 @@ const RegisterModal = ({ isOpen, onClose }) => {
                         value={patientData.fechaNacimiento}
                         onChange={(e) => handlePatientChange('fechaNacimiento', e.target.value)}
                         min={getMinDate()}
-                        max={getMaxDate()}
+                        max={getTodayDate()}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-500 focus:border-[#003178] transition-colors h-[54px]"
                       />
                     </div>
-                  </div>
-
-                  {patientData.edad !== null && (
-                    <div className="flex items-center gap-2 px-1 -mt-2">
-                      <span className="material-symbols-outlined text-[#6cbdfe] text-sm">info</span>
-                      <p className="text-xs text-[#003178] font-semibold">{patientData.edad} años ({patientData.edad >= 18 ? 'Mayor de edad' : 'Menor de edad'})</p>
-                    </div>
-                  )}
-
-                  {/* Fila 3: Género, Nacionalidad */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Género *</label>
                       <ComboBox
@@ -1172,20 +1205,9 @@ const RegisterModal = ({ isOpen, onClose }) => {
                         placeholder="Seleccione género..."
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nacionalidad *</label>
-                      <ComboBox
-                        required
-                        searchable
-                        options={countryOptions}
-                        value={patientData.pais}
-                        onChange={handlePatientCountryChange}
-                        placeholder="Seleccione país"
-                      />
-                    </div>
                   </div>
 
-                  {/* Fila 4: Dirección */}
+                  {/* 8. Dirección */}
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Dirección *</label>
                     <input
@@ -1198,7 +1220,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                     />
                   </div>
 
-                  {/* Fila 5: Departamento, Provincia, Distrito */}
+                  {/* Departamento, Provincia, Distrito si el país es Perú */}
                   {patientData.pais === 'Perú' && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-fade-in-up">
                       <div>
@@ -1239,7 +1261,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                     </div>
                   )}
 
-                  {/* Fila 6: Lugar en Familia, Estado Civil */}
+                  {/* 9. Lugar en la familia, 10. Estado civil */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Lugar en Familia *</label>
@@ -1263,7 +1285,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                     </div>
                   </div>
 
-                  {/* Fila 7: Grado de Instrucción, Ocupación */}
+                  {/* 11. Grado de instrucción, 12. Ocupación */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Grado Instrucción *</label>
@@ -1276,7 +1298,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ocupación (Texto Libre) *</label>
+                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ocupación *</label>
                       <input
                         required
                         type="text"
@@ -1288,7 +1310,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                     </div>
                   </div>
 
-                  {/* Fila 8: Correo Electrónico y Celular */}
+                  {/* 13. Correo */}
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
                       {isProxy ? "Correo (no necesario)" : "Correo electrónico *"}
@@ -1306,10 +1328,12 @@ const RegisterModal = ({ isOpen, onClose }) => {
                     />
                     {!isProxy && (
                       <p className="text-[10px] text-gray-400 mt-1 ml-2 leading-tight">
-                        Se usará para notificaciones. El acceso será con tu DNI.
+                        Se usará para validación de la cuenta. El acceso será con tu DNI.
                       </p>
                     )}
                   </div>
+
+                  {/* 14. Celular */}
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
                       {isProxy ? "Celular (no necesario)" : "Celular *"}
@@ -1323,7 +1347,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                       />
                     ) : (
                       <div className="flex gap-2 w-full">
-                        <div className="w-28 shrink-0">
+                        <div className="w-36 shrink-0">
                           <ComboBox
                             options={phoneOptions}
                             value={patientPhonePrefix}
@@ -1355,8 +1379,6 @@ const RegisterModal = ({ isOpen, onClose }) => {
                     )}
                   </div>
                 </div>
-
-                {/* COLUMNA APODERADO */}
                 <div className={`space-y-4 transition-all duration-500 ${isProxy ? 'opacity-100' : 'opacity-30 pointer-events-none'}`}>
                   <h3 className="text-[#003178] font-bold text-xs uppercase tracking-widest border-b pb-2">Datos del Apoderado</h3>
 
@@ -1370,7 +1392,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                         type="text"
                         placeholder="Nombres"
                         value={proxyData.nombres}
-                        onChange={(e) => handleProxyChange('nombres', e.target.value)}
+                        onChange={(e) => handleNameChange('nombres', e.target.value, false)}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px] disabled:opacity-50"
                       />
                     </div>
@@ -1382,7 +1404,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                         type="text"
                         placeholder="Apellido Paterno"
                         value={proxyData.apellidoPaterno}
-                        onChange={(e) => handleProxyChange('apellidoPaterno', e.target.value)}
+                        onChange={(e) => handleNameChange('apellidoPaterno', e.target.value, false)}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px] disabled:opacity-50"
                       />
                     </div>
@@ -1394,42 +1416,33 @@ const RegisterModal = ({ isOpen, onClose }) => {
                         type="text"
                         placeholder="Apellido Materno"
                         value={proxyData.apellidoMaterno}
-                        onChange={(e) => handleProxyChange('apellidoMaterno', e.target.value)}
+                        onChange={(e) => handleNameChange('apellidoMaterno', e.target.value, false)}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px] disabled:opacity-50"
                       />
                     </div>
                   </div>
 
-                  {/* Fila 2: Tipo Documento, Número Documento, Fecha Nacimiento */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Fila 2: Documento, Fecha Nacimiento */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Tipo Doc *</label>
-                      <ComboBox
-                        required={isProxy}
-                        disabled={!isProxy}
-                        options={tipoDocOptions}
-                        value={proxyData.tipoDocumento}
-                        onChange={(val) => handleProxyChange('tipoDocumento', val)}
-                        placeholder="Tipo Doc *"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Doc. Nro *</label>
+                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">DNI / CE *</label>
                       <input
                         required={isProxy}
                         disabled={!isProxy}
                         type="text"
-                        placeholder="Documento"
+                        placeholder="Documento (8-12 dígitos)"
                         value={proxyData.dni}
                         onChange={(e) => {
-                          if (proxyData.tipoDocumento === 'DNI') {
-                            handleLimitInput(e, 8, (val) => handleProxyChange('dni', val));
-                          } else {
-                            const val = e.target.value.replace(/\s/g, '').slice(0, 12);
-                            handleProxyChange('dni', val);
-                          }
+                          const val = e.target.value.replace(/\D/g, '');
+                          const limit = 12;
+                          const cleanedVal = val.slice(0, limit);
+                          setProxyData(prev => ({
+                            ...prev,
+                            dni: cleanedVal,
+                            tipoDocumento: cleanedVal.length === 8 ? 'DNI' : 'Carnet de extranjería'
+                          }));
                         }}
-                        maxLength={proxyData.tipoDocumento === 'DNI' ? 8 : 12}
+                        maxLength={12}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px] disabled:opacity-50"
                       />
                     </div>
@@ -1442,18 +1455,11 @@ const RegisterModal = ({ isOpen, onClose }) => {
                         value={proxyData.fechaNacimiento}
                         onChange={(e) => handleProxyChange('fechaNacimiento', e.target.value)}
                         min={getMinDate()}
-                        max={getMaxDate()}
+                        max={getTodayDate()}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-500 focus:border-[#003178] transition-colors h-[54px] disabled:opacity-50"
                       />
                     </div>
                   </div>
-
-                  {proxyData.edad !== null && (
-                    <div className="flex items-center gap-2 px-1 -mt-2">
-                      <span className="material-symbols-outlined text-[#6cbdfe] text-sm">info</span>
-                      <p className="text-xs text-[#003178] font-semibold">{proxyData.edad} años</p>
-                    </div>
-                  )}
 
                   {/* Fila 3: Género, Parentesco */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1498,7 +1504,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Celular *</label>
                     {isProxy ? (
                       <div className="flex gap-2 w-full">
-                        <div className="w-28 shrink-0">
+                        <div className="w-36 shrink-0">
                           <ComboBox
                             options={phoneOptions}
                             value={proxyPhonePrefix}

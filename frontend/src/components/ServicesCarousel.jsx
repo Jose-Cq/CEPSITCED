@@ -106,8 +106,7 @@ const ServicesCarousel = ({ onOpenAuth }) => {
         {/* Metadata: Duration & Price */}
         <div className="flex justify-between items-center text-xs font-semibold text-slate-500 uppercase tracking-wider">
           <span className="flex items-center gap-1.5">
-            <span className="material-symbols-outlined text-[16px] text-gray-400">schedule</span>
-            {service.duracion_minutos || 45} min
+
           </span>
           <span className="text-sm font-bold text-gray-900">
             {formatSoles(service.precio_sesion)}
@@ -128,7 +127,7 @@ const ServicesCarousel = ({ onOpenAuth }) => {
   return (
     <section id="servicios" className="py-28 bg-[#f9f9fc] border-b border-slate-100 overflow-hidden relative">
       <div className="max-w-7xl mx-auto px-6">
-        
+
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-12">
           <span className="text-xs font-bold text-[#003178] uppercase tracking-widest bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
@@ -145,11 +144,10 @@ const ServicesCarousel = ({ onOpenAuth }) => {
           <div className="flex flex-wrap justify-center gap-3 mb-12">
             <button
               onClick={() => setSelectedLocal('')}
-              className={`px-5 py-2.5 rounded-full font-bold text-xs uppercase tracking-wider transition-all cursor-pointer border ${
-                selectedLocal === ''
-                  ? 'bg-[#003178] text-white border-[#003178] shadow-md'
-                  : 'bg-white text-gray-650 border-slate-200 hover:border-[#003178] hover:text-[#003178]'
-              }`}
+              className={`px-5 py-2.5 rounded-full font-bold text-xs uppercase tracking-wider transition-all cursor-pointer border ${selectedLocal === ''
+                ? 'bg-[#003178] text-white border-[#003178] shadow-md'
+                : 'bg-white text-gray-650 border-slate-200 hover:border-[#003178] hover:text-[#003178]'
+                }`}
             >
               Todos los Locales
             </button>
@@ -157,11 +155,10 @@ const ServicesCarousel = ({ onOpenAuth }) => {
               <button
                 key={loc.id}
                 onClick={() => setSelectedLocal(loc.id)}
-                className={`px-5 py-2.5 rounded-full font-bold text-xs uppercase tracking-wider transition-all cursor-pointer border ${
-                  selectedLocal === loc.id
-                    ? 'bg-[#003178] text-white border-[#003178] shadow-md'
-                    : 'bg-white text-gray-650 border-slate-200 hover:border-[#003178] hover:text-[#003178]'
-                }`}
+                className={`px-5 py-2.5 rounded-full font-bold text-xs uppercase tracking-wider transition-all cursor-pointer border ${selectedLocal === loc.id
+                  ? 'bg-[#003178] text-white border-[#003178] shadow-md'
+                  : 'bg-white text-gray-650 border-slate-200 hover:border-[#003178] hover:text-[#003178]'
+                  }`}
               >
                 {loc.nombre}
               </button>
@@ -217,9 +214,8 @@ const ServicesCarousel = ({ onOpenAuth }) => {
               <button
                 onClick={handlePrev}
                 disabled={currentIndex === 0}
-                className={`absolute left-0 top-1/2 -translate-y-1/2 -ml-4 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-20 cursor-pointer ${
-                  currentIndex === 0 ? 'opacity-0 pointer-events-none' : 'opacity-100'
-                }`}
+                className={`absolute left-0 top-1/2 -translate-y-1/2 -ml-4 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-20 cursor-pointer ${currentIndex === 0 ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                  }`}
                 aria-label="Anterior"
               >
                 <span className="material-symbols-outlined text-[24px] text-gray-700">chevron_left</span>
@@ -227,9 +223,8 @@ const ServicesCarousel = ({ onOpenAuth }) => {
               <button
                 onClick={handleNext}
                 disabled={currentIndex >= maxIndex}
-                className={`absolute right-0 top-1/2 -translate-y-1/2 -mr-4 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-20 cursor-pointer ${
-                  currentIndex >= maxIndex ? 'opacity-0 pointer-events-none' : 'opacity-100'
-                }`}
+                className={`absolute right-0 top-1/2 -translate-y-1/2 -mr-4 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-20 cursor-pointer ${currentIndex >= maxIndex ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                  }`}
                 aria-label="Siguiente"
               >
                 <span className="material-symbols-outlined text-[24px] text-gray-700">chevron_right</span>

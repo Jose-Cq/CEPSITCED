@@ -193,10 +193,10 @@ const App = () => {
           <Route path="/dashboard/documents" element={<Documents />} />
           <Route path="/dashboard/profile" element={<Profile />} />
           {/* Redirecciones para rutas públicas y desconocidas cuando el usuario ya está autenticado */}
-          <Route path="/" element={<Navigate to="/dashboard/appointments" replace />} />
-          <Route path="/login" element={<Navigate to="/dashboard/appointments" replace />} />
-          <Route path="/register" element={<Navigate to="/dashboard/appointments" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard/appointments" replace />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/login" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/register" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </PacienteProvider>
     );
@@ -223,7 +223,7 @@ const App = () => {
   };
 
   const handleLoginSuccess = () => {
-    navigate('/dashboard/appointments');
+    navigate('/dashboard');
   };
 
   return (
