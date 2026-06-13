@@ -140,6 +140,8 @@ const LandingPage = ({ onOpenAuth }) => {
         psychologist={selectedPsychologist}
       />
 
+      {/* Footer */}
+      <Footer />
     </div>
   );
 };

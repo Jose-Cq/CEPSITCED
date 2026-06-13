@@ -18,9 +18,7 @@ const Footer = () => {
         {/* About column */}
         <div className="space-y-4 text-left">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-[#6cbdfe] flex items-center justify-center">
-              <span className="text-[#0b132b] font-bold text-xl">C</span>
-            </div>
+            <img src="/logo-cepsitced.png" alt="Logo CEPSITCED" className="h-10 w-10 object-contain" />
             <span className="text-white text-2xl font-black tracking-tighter uppercase">CEPSITCED</span>
           </div>
           <p className="text-slate-400 text-sm leading-relaxed">
