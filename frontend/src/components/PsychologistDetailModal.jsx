@@ -12,8 +12,15 @@ const PsychologistDetailModal = ({ isOpen, onClose, psychologist }) => {
       document.body.style.overflow = 'unset';
     };
   }, [isOpen]);
-
   if (!isOpen || !psychologist) return null;
+
+  const safeNombre = psychologist.nombreCompleto || psychologist.nombre || 'Especialista';
+  const safeFoto = psychologist.imagenPerfilUrl || psychologist.foto;
+  const safeColegiatura = psychologist.nroCpsp || psychologist.colegiatura || '';
+  const safeHorario = psychologist.horario || psychologist.atencion || 'Horarios a consultar';
+  const safeSpecialty = psychologist.cargo && psychologist.area ? `${psychologist.cargo} - ${psychologist.area}` : (psychologist.cargo || psychologist.especialidad || 'Especialista');
+  const safeDescripcion = psychologist.perfilProfesional || psychologist.descripcion || 'Especialista en psicología clínica con enfoque integral.';
+  const safeEstudios = psychologist.formaciones || psychologist.estudios || [];
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 md:p-6 overflow-y-auto">
@@ -29,7 +36,7 @@ const PsychologistDetailModal = ({ isOpen, onClose, psychologist }) => {
         {/* Botón de cerrar */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 z-20 h-10 w-10 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-500 hover:text-gray-800 hover:bg-white shadow-sm border border-gray-100 transition-all active:scale-95"
+          className="absolute top-4 right-4 z-20 h-10 w-10 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-550 hover:text-gray-850 hover:bg-white shadow-sm border border-gray-100 transition-all active:scale-95"
         >
           <span className="material-symbols-outlined text-[22px]">close</span>
         </button>
@@ -41,16 +48,16 @@ const PsychologistDetailModal = ({ isOpen, onClose, psychologist }) => {
           <div>
             {/* Foto de Perfil */}
             <div className="w-40 h-40 md:w-48 md:h-48 rounded-2xl overflow-hidden border-4 border-white/10 shadow-lg mx-auto mb-6 bg-blue-900/50 flex items-center justify-center text-white">
-              {psychologist.foto ? (
+              {safeFoto ? (
                 <img
-                  src={psychologist.foto}
-                  alt={psychologist.nombre}
+                  src={safeFoto}
+                  alt={safeNombre}
                   className="w-full h-full object-cover object-top"
                 />
               ) : (
                 <span className="text-5xl font-bold uppercase select-none">
                   {(() => {
-                    const safeValue = String(psychologist.nombre || 'Especialista').trim();
+                    const safeValue = String(safeNombre).trim();
                     return safeValue
                       .split(/\s+/)
                       .filter(Boolean)
@@ -66,11 +73,13 @@ const PsychologistDetailModal = ({ isOpen, onClose, psychologist }) => {
             {/* Identificación Básica */}
             <div className="text-center md:text-left">
               <h3 className="text-2xl font-black tracking-tight leading-tight mb-2">
-                {psychologist.nombre}
+                {safeNombre}
               </h3>
-              <p className="text-[#6cbdfe] font-bold text-xs uppercase tracking-wider mb-1">
-                {psychologist.colegiatura}
-              </p>
+              {safeColegiatura && (
+                <p className="text-[#6cbdfe] font-bold text-xs uppercase tracking-wider mb-1">
+                  {safeColegiatura}
+                </p>
+              )}
               <span className="inline-block bg-white/10 px-3 py-1 rounded-full text-xs font-medium border border-white/10 mt-2">
                 Staff Permanente
               </span>
@@ -78,17 +87,19 @@ const PsychologistDetailModal = ({ isOpen, onClose, psychologist }) => {
           </div>
 
           {/* Información de Atención */}
-          <div className="mt-8 pt-6 border-t border-white/10">
-            <h4 className="text-sm font-bold uppercase tracking-wider text-[#6cbdfe] mb-3 flex items-center gap-1.5 justify-center md:justify-start">
-              <span className="material-symbols-outlined text-[18px]">clinical_notes</span>
-              Atención Clínica
-            </h4>
-            <div className="space-y-3 text-sm text-gray-200 text-center md:text-left">
-              <p className="leading-relaxed">
-                {psychologist.atencion}
-              </p>
+          {safeHorario && (
+            <div className="mt-8 pt-6 border-t border-white/10">
+              <h4 className="text-sm font-bold uppercase tracking-wider text-[#6cbdfe] mb-3 flex items-center gap-1.5 justify-center md:justify-start">
+                <span className="material-symbols-outlined text-[18px]">clinical_notes</span>
+                Atención Clínica
+              </h4>
+              <div className="space-y-3 text-sm text-gray-200 text-center md:text-left">
+                <p className="leading-relaxed">
+                  {safeHorario}
+                </p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Columna Derecha: Trayectoria, Especialidades y Estudios */}
@@ -97,31 +108,33 @@ const PsychologistDetailModal = ({ isOpen, onClose, psychologist }) => {
             {/* Especialidad principal */}
             <div className="mb-6">
               <span className="text-xs font-bold text-[#003178] uppercase tracking-widest bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
-                {psychologist.especialidad}
+                {safeSpecialty}
               </span>
             </div>
 
             {/* Perfil Profesional */}
-            <div className="mb-8">
-              <h4 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#003178] text-[20px]">psychology</span>
-                Perfil Profesional
-              </h4>
-              <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">
-                {psychologist.descripcion}
-              </p>
-            </div>
+            {safeDescripcion && (
+              <div className="mb-8">
+                <h4 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[#003178] text-[20px]">psychology</span>
+                  Perfil Profesional
+                </h4>
+                <p className="text-gray-650 text-sm leading-relaxed whitespace-pre-line">
+                  {safeDescripcion}
+                </p>
+              </div>
+            )}
 
             {/* Estudios / Certificaciones */}
-            {psychologist.estudios && (
+            {safeEstudios && safeEstudios.length > 0 && (
               <div className="mb-6">
                 <h4 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
                   <span className="material-symbols-outlined text-[#003178] text-[20px]">school</span>
                   Formación y Estudios
                 </h4>
                 <ul className="space-y-3">
-                  {psychologist.estudios.map((estudio, idx) => (
-                    <li key={idx} className="flex items-start gap-2.5 text-gray-600 text-sm">
+                  {safeEstudios.map((estudio, idx) => (
+                    <li key={idx} className="flex items-start gap-2.5 text-gray-650 text-sm">
                       <span className="material-symbols-outlined text-green-500 text-[18px] mt-0.5 select-none">
                         check_circle
                       </span>

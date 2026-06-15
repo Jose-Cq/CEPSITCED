@@ -18,8 +18,9 @@ import MissionVisionSection from './components/MissionVisionSection';
 import ServicesCarousel from './components/ServicesCarousel';
 import SpecialistsCarousel from './components/SpecialistsCarousel';
 import TestimonialsCarousel from './components/TestimonialsCarousel';
+import FaqSection from './components/FaqSection';
 import Footer from './components/Footer';
-import { obtenerCarruselLanding, obtenerConfiguracionLanding, obtenerTestimoniosLanding } from '@backend/services/landingService.js';
+import { obtenerCarruselLanding, obtenerConfiguracionLanding, obtenerTestimoniosLanding, obtenerFaqsLanding } from '@backend/services/landingService.js';
 
 const fallbackSlides = [
   {
@@ -41,6 +42,7 @@ const LandingPage = ({ onOpenAuth }) => {
   const [config, setConfig] = useState(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [testimonios, setTestimonios] = useState([]);
+  const [faqs, setFaqs] = useState([]);
 
   useEffect(() => {
     const fetchLandingData = async () => {
@@ -69,6 +71,13 @@ const LandingPage = ({ onOpenAuth }) => {
       } catch (err) {
         console.error('Error fetching testimonials:', err);
       }
+
+      try {
+        const faqsData = await obtenerFaqsLanding();
+        setFaqs(faqsData || []);
+      } catch (err) {
+        console.error('Error fetching FAQs:', err);
+      }
     };
 
     fetchLandingData();
@@ -87,14 +96,15 @@ const LandingPage = ({ onOpenAuth }) => {
             <img src="/logo-cepsitced.png" alt="Logo CEPSITCED" className="h-10 w-10 object-contain" />
             <span className="text-2xl font-black tracking-tighter uppercase">CEPSITCED</span>
           </div>
-          <nav className="hidden lg:flex items-center gap-8 font-bold text-xs text-gray-550 uppercase tracking-widest">
-            <a href="#inicio" className="text-[#003178]">Inicio</a>
+          <nav className="hidden lg:flex items-center gap-6 font-bold text-xs text-gray-550 uppercase tracking-widest">
+            <a href="#inicio" className="hover:text-[#003178] transition-colors text-[#003178]">Inicio</a>
             <a href="#nosotros" className="hover:text-[#003178] transition-colors">Nosotros</a>
-            <a href="#servicios" className="hover:text-[#003178] transition-colors">Servicios Clínicos</a>
+            <a href="#servicios" className="hover:text-[#003178] transition-colors">Servicios</a>
             <a href="#specialists" className="hover:text-[#003178] transition-colors">Especialistas</a>
             {testimonios.length > 0 && (
               <a href="#testimonios" className="hover:text-[#003178] transition-colors">Testimonios</a>
             )}
+            <a href="#faq" className="hover:text-[#003178] transition-colors">FAQ</a>
           </nav>
           <button
             onClick={onOpenAuth}
@@ -127,11 +137,16 @@ const LandingPage = ({ onOpenAuth }) => {
         {/* Sección de Especialistas */}
         <SpecialistsCarousel
           onOpenDetails={handleOpenDetails}
+          onOpenAuth={onOpenAuth}
         />
 
         {/* Sección de Testimonios */}
         <TestimonialsCarousel testimonios={testimonios} />
+
+        {/* Sección de Preguntas Frecuentes */}
+        <FaqSection faqs={faqs} />
       </main>
+
 
       {/* Modal de Detalle */}
       <PsychologistDetailModal

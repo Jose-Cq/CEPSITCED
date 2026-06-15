@@ -72,6 +72,7 @@ CREATE TABLE public.citas (
   motivo_ausencia text,
   habitacion_id uuid,
   modalidad character varying NOT NULL DEFAULT 'Presencial'::character varying,
+  link_reunion character varying,
   CONSTRAINT citas_pkey PRIMARY KEY (id),
   CONSTRAINT citas_paciente_id_fkey FOREIGN KEY (paciente_id) REFERENCES public.pacientes(id_paciente),
   CONSTRAINT citas_paquete_id_fkey FOREIGN KEY (paquete_id) REFERENCES public.paquetes_adquiridos(id),
@@ -157,6 +158,8 @@ CREATE TABLE public.tramites_documentales (
   hora_recojo time without time zone,
   paquete_origen_id uuid,
   created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  archivo_pdf text,
+  habilitar_visualizacion boolean DEFAULT false,
   CONSTRAINT tramites_documentales_pkey PRIMARY KEY (id),
   CONSTRAINT tramites_documentales_paciente_id_fkey FOREIGN KEY (paciente_id) REFERENCES public.pacientes(id_paciente),
   CONSTRAINT tramites_documentales_servicio_id_fkey FOREIGN KEY (servicio_id) REFERENCES public.servicios(id),
@@ -540,6 +543,7 @@ CREATE TABLE public.landing_configuracion (
   mostrar_testimonios boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
+  nosotros_imagen_url text,
   CONSTRAINT landing_configuracion_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.landing_personal (
@@ -571,4 +575,71 @@ CREATE TABLE public.landing_testimonios (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT landing_testimonios_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.historias_clinicas (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  paciente_id uuid NOT NULL,
+  servicio character varying NOT NULL,
+  version integer NOT NULL DEFAULT 1,
+  sesion_numero integer NOT NULL DEFAULT 1,
+  fecha_intervencion date NOT NULL DEFAULT CURRENT_DATE,
+  lugar_tiempo text,
+  hijos_hermanos text,
+  religion character varying,
+  acompanante character varying,
+  correo character varying,
+  historia_personal text,
+  diagnostico_presuntivo text,
+  recomendaciones text,
+  created_at timestamp with time zone DEFAULT now(),
+  hora_intervencion character varying,
+  sede character varying,
+  consultorio character varying,
+  CONSTRAINT historias_clinicas_pkey PRIMARY KEY (id),
+  CONSTRAINT historias_clinicas_paciente_id_fkey FOREIGN KEY (paciente_id) REFERENCES public.pacientes(id_paciente)
+);
+CREATE TABLE public.cita_historia_relacion (
+  cita_id uuid NOT NULL,
+  historia_clinica_id uuid NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT cita_historia_relacion_pkey PRIMARY KEY (cita_id, historia_clinica_id),
+  CONSTRAINT cita_historia_relacion_cita_id_fkey FOREIGN KEY (cita_id) REFERENCES public.citas(id),
+  CONSTRAINT cita_historia_relacion_historia_clinica_id_fkey FOREIGN KEY (historia_clinica_id) REFERENCES public.historias_clinicas(id)
+);
+CREATE TABLE public.permisos_pacientes (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  paciente_id uuid NOT NULL,
+  paciente_nombre character varying NOT NULL,
+  solicitante_id uuid NOT NULL,
+  solicitante_nombre character varying NOT NULL,
+  propietario_id uuid NOT NULL,
+  propietario_nombre character varying NOT NULL,
+  estado character varying NOT NULL DEFAULT 'pendiente'::character varying CHECK (estado::text = ANY (ARRAY['pendiente'::character varying::text, 'aprobado'::character varying::text, 'denegado'::character varying::text])),
+  duracion_horas integer,
+  fecha_expiracion timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT permisos_pacientes_pkey PRIMARY KEY (id),
+  CONSTRAINT permisos_pacientes_paciente_id_fkey FOREIGN KEY (paciente_id) REFERENCES public.pacientes(id_paciente),
+  CONSTRAINT permisos_pacientes_solicitante_id_fkey FOREIGN KEY (solicitante_id) REFERENCES public.empleados(id),
+  CONSTRAINT permisos_pacientes_propietario_id_fkey FOREIGN KEY (propietario_id) REFERENCES public.empleados(id)
+);
+CREATE TABLE public.bitacoras_sesiones (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  cita_id uuid NOT NULL UNIQUE,
+  bitacora text NOT NULL,
+  archivo_pdf text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT bitacoras_sesiones_pkey PRIMARY KEY (id),
+  CONSTRAINT bitacoras_sesiones_cita_id_fkey FOREIGN KEY (cita_id) REFERENCES public.citas(id)
+);
+CREATE TABLE public.landing_faq (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  pregunta text NOT NULL,
+  respuesta text NOT NULL,
+  orden integer DEFAULT 1,
+  activo boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT landing_faq_pkey PRIMARY KEY (id)
 );

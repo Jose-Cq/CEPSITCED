@@ -29,10 +29,14 @@ const getServiceFallbackDesc = (nombre) => {
 const ServicesCarousel = ({ onOpenAuth }) => {
   const [locales, setLocales] = useState([]);
   const [selectedLocal, setSelectedLocal] = useState(''); // '' means all
-  const [services, setServices] = useState([]);
+  const [allServices, setAllServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [visibleColumns, setVisibleColumns] = useState(3);
+  const [isHovered, setIsHovered] = useState(false);
+  const [disableTransition, setDisableTransition] = useState(false);
+  
+  const isTransitioningRef = useRef(false);
 
   // Detect responsive visible columns
   useEffect(() => {
@@ -46,6 +50,7 @@ const ServicesCarousel = ({ onOpenAuth }) => {
         setVisibleColumns(1);
       }
       setCurrentIndex(0); // Reset index on resize
+      setDisableTransition(true);
     };
 
     handleResize();
@@ -53,70 +58,132 @@ const ServicesCarousel = ({ onOpenAuth }) => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Fetch active locales
+  // Fetch locales and all services initially
   useEffect(() => {
-    const loadLocales = async () => {
-      const data = await obtenerLocalesActivos();
-      setLocales(data || []);
+    const loadInitialData = async () => {
+      setLoading(true);
+      try {
+        const [localesData, servicesData] = await Promise.all([
+          obtenerLocalesActivos(),
+          obtenerServiciosLandingPorLocal('') // Get all active services
+        ]);
+
+        const servicesList = servicesData || [];
+        const rawLocales = localesData || [];
+
+        // Filter out locales that do NOT have any active service
+        const filteredLocales = rawLocales.filter(loc => 
+          servicesList.some(s => {
+            const matchesDirect = s.local_id === loc.id;
+            const matchesArray = Array.isArray(s.locales_ids) && s.locales_ids.includes(loc.id);
+            return matchesDirect || matchesArray;
+          })
+        );
+
+        setLocales(filteredLocales);
+        setAllServices(servicesList);
+      } catch (err) {
+        console.error('Error fetching services and locales:', err);
+      } finally {
+        setLoading(false);
+      }
     };
-    loadLocales();
+    loadInitialData();
   }, []);
 
-  // Fetch services depending on local
-  useEffect(() => {
-    const loadServices = async () => {
-      setLoading(true);
-      const data = await obtenerServiciosLandingPorLocal(selectedLocal);
-      setServices(data || []);
-      setCurrentIndex(0); // Reset index on filter change
-      setLoading(false);
-    };
-    loadServices();
-  }, [selectedLocal]);
+  // Filter services locally depending on local selection
+  const services = selectedLocal
+    ? allServices.filter(s => {
+        const matchesDirect = s.local_id === selectedLocal;
+        const matchesArray = Array.isArray(s.locales_ids) && s.locales_ids.includes(selectedLocal);
+        return matchesDirect || matchesArray;
+      })
+    : allServices;
 
-  const handlePrev = () => {
-    setCurrentIndex((prev) => Math.max(0, prev - 1));
-  };
+  const isSlider = services.length > visibleColumns;
+  const extendedServices = isSlider 
+    ? [...services, ...services.slice(0, visibleColumns)] 
+    : services;
 
   const handleNext = () => {
-    const maxIndex = Math.max(0, services.length - visibleColumns);
-    setCurrentIndex((prev) => Math.min(maxIndex, prev + 1));
+    if (isTransitioningRef.current || !isSlider) return;
+    isTransitioningRef.current = true;
+    setDisableTransition(false);
+    setCurrentIndex((prev) => prev + 1);
   };
 
-  const maxIndex = Math.max(0, services.length - visibleColumns);
-  const isSlider = services.length > visibleColumns;
+  const handlePrev = () => {
+    if (isTransitioningRef.current || !isSlider) return;
+    isTransitioningRef.current = true;
+    setDisableTransition(false);
+    setCurrentIndex((prev) => prev - 1);
+  };
+
+  const handleTransitionEnd = () => {
+    isTransitioningRef.current = false;
+    if (currentIndex >= services.length) {
+      setDisableTransition(true);
+      setCurrentIndex(0);
+    } else if (currentIndex < 0) {
+      setDisableTransition(true);
+      setCurrentIndex(services.length - 1);
+    }
+  };
+
+  // Auto-play carrousel logic: pauses on hover, waits 3 seconds on mouse leave
+  useEffect(() => {
+    if (!isSlider || isHovered) return;
+
+    const interval = setInterval(() => {
+      handleNext();
+    }, 3000); // 3 seconds interval
+
+    return () => clearInterval(interval);
+  }, [isSlider, isHovered, services.length, currentIndex]);
+
+  // Re-enable transition smoothly after instant jump resets
+  useEffect(() => {
+    if (disableTransition) {
+      const timer = setTimeout(() => {
+        setDisableTransition(false);
+      }, 20);
+      return () => clearTimeout(timer);
+    }
+  }, [disableTransition]);
+
+  // Adjust current index if selected local filter changes the number of items
+  useEffect(() => {
+    setCurrentIndex(0);
+    setDisableTransition(true);
+    isTransitioningRef.current = false;
+  }, [selectedLocal]);
 
   // Single card rendering helper
   const renderCard = (service) => (
-    <div className="group bg-white rounded-3xl border border-slate-100 p-8 h-[420px] hover:shadow-xl hover:border-blue-200 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between text-left">
+    <div className="group bg-white rounded-3xl border border-slate-100 p-6 h-[340px] hover:shadow-xl hover:border-blue-200 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between text-left">
       <div>
         {/* Upper Icon */}
-        <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-[#003178] group-hover:bg-[#003178] group-hover:text-white transition-all duration-300">
-          <span className="material-symbols-outlined text-[28px]">
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-[#003178] group-hover:bg-[#003178] group-hover:text-white transition-all duration-300">
+          <span className="material-symbols-outlined text-[24px]">
             {service.icono || getServiceFallbackIcon(service.nombre_servicio)}
           </span>
         </div>
-        <h3 className="text-xl font-bold text-gray-900 mb-3 line-clamp-1">{service.nombre_servicio}</h3>
-        <p className="text-gray-550 text-sm leading-relaxed mb-6 line-clamp-3">
+        <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-1 leading-snug">{service.nombre_servicio}</h3>
+        <p className="text-gray-550 text-xs leading-relaxed line-clamp-3">
           {service.descripcion || getServiceFallbackDesc(service.nombre_servicio)}
         </p>
       </div>
 
-      <div className="space-y-4 pt-4 border-t border-slate-50">
-        {/* Metadata: Duration & Price */}
-        <div className="flex justify-between items-center text-xs font-semibold text-slate-500 uppercase tracking-wider">
-          <span className="flex items-center gap-1.5">
-
-          </span>
-          <span className="text-sm font-bold text-gray-900">
-            {formatSoles(service.precio_sesion)}
-          </span>
+      <div className="space-y-3 pt-3 border-t border-slate-50">
+        {/* Price or Consult */}
+        <div className="text-left font-black text-lg text-[#003178]">
+          {service.precio_sesion ? formatSoles(service.precio_sesion) : 'A consultar'}
         </div>
 
         {/* Booking Button */}
         <button
           onClick={onOpenAuth}
-          className="w-full text-center bg-[#003178] hover:bg-blue-900 text-white font-bold py-3 px-4 rounded-2xl transition-all text-xs uppercase tracking-wider cursor-pointer shadow-sm"
+          className="w-full text-center bg-[#003178] hover:bg-blue-900 text-white font-bold py-2.5 px-4 rounded-2xl transition-all text-xs uppercase tracking-wider cursor-pointer shadow-sm no-flip"
         >
           Reservar Sesión
         </button>
@@ -124,24 +191,27 @@ const ServicesCarousel = ({ onOpenAuth }) => {
     </div>
   );
 
+  // If there's 0 or 1 local with services, hide local selector.
+  const showLocalFilter = locales.length > 1;
+
   return (
-    <section id="servicios" className="py-28 bg-[#f9f9fc] border-b border-slate-100 overflow-hidden relative">
+    <section id="servicios" className="py-16 md:py-20 bg-[#f9f9fc] border-b border-slate-100 overflow-hidden relative font-['Manrope']">
       <div className="max-w-7xl mx-auto px-6">
 
         {/* Header */}
-        <div className="text-center max-w-3xl mx-auto mb-12">
+        <div className="text-center max-w-3xl mx-auto mb-10">
           <span className="text-xs font-bold text-[#003178] uppercase tracking-widest bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
             Especialidades
           </span>
-          <h2 className="text-4xl md:text-5xl font-extrabold text-[#1a1c1e] mt-4 tracking-tighter uppercase animate-fadeIn">
+          <h2 className="text-4xl md:text-5xl font-extrabold text-[#1a1c1e] mt-3 tracking-tighter uppercase leading-tight">
             Nuestros Servicios Clínicos
           </h2>
-          <div className="mx-auto mt-4 h-1 w-16 bg-[#6cbdfe] rounded-full mb-8"></div>
+          <div className="mx-auto mt-4 h-1 w-16 bg-[#6cbdfe] rounded-full mb-6"></div>
         </div>
 
         {/* Local Filter Selector */}
-        {locales.length > 0 && (
-          <div className="flex flex-wrap justify-center gap-3 mb-12">
+        {showLocalFilter && (
+          <div className="flex flex-wrap justify-center gap-3 mb-8">
             <button
               onClick={() => setSelectedLocal('')}
               className={`px-5 py-2.5 rounded-full font-bold text-xs uppercase tracking-wider transition-all cursor-pointer border ${selectedLocal === ''
@@ -178,7 +248,7 @@ const ServicesCarousel = ({ onOpenAuth }) => {
             <p className="text-gray-550 text-base font-semibold">No se encontraron servicios para este local.</p>
           </div>
         ) : !isSlider ? (
-          /* Static Centered Grid for 1 or 2 items (prevents slider overflow/spacing bugs) */
+          /* Static Centered Grid for 3 or fewer items (prevents slider overflow/spacing bugs) */
           <div className="flex flex-wrap justify-center gap-8">
             {services.map((service) => (
               <div key={service.id} className="w-full sm:w-[320px] md:w-[360px] flex-shrink-0">
@@ -187,19 +257,25 @@ const ServicesCarousel = ({ onOpenAuth }) => {
             ))}
           </div>
         ) : (
-          /* Responsive Slider */
-          <div className="relative">
+          /* Responsive Infinite Loop Forward Slider with Hover Controls */
+          <div 
+            className="relative"
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+          >
             {/* Carousel Container */}
             <div className="overflow-hidden">
               <div
-                className="flex transition-transform duration-500 ease-out"
+                className="flex"
+                onTransitionEnd={handleTransitionEnd}
                 style={{
                   transform: `translateX(-${currentIndex * (100 / visibleColumns)}%)`,
+                  transition: disableTransition ? 'none' : 'transform 500ms ease-out'
                 }}
               >
-                {services.map((service) => (
+                {extendedServices.map((service, index) => (
                   <div
-                    key={service.id}
+                    key={`${service.id}-${index}`}
                     className="flex-shrink-0 px-4"
                     style={{ flex: `0 0 ${100 / visibleColumns}%` }}
                   >
@@ -213,18 +289,14 @@ const ServicesCarousel = ({ onOpenAuth }) => {
             <>
               <button
                 onClick={handlePrev}
-                disabled={currentIndex === 0}
-                className={`absolute left-0 top-1/2 -translate-y-1/2 -ml-4 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-20 cursor-pointer ${currentIndex === 0 ? 'opacity-0 pointer-events-none' : 'opacity-100'
-                  }`}
+                className="absolute left-0 top-1/2 -translate-y-1/2 -ml-4 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-20 cursor-pointer"
                 aria-label="Anterior"
               >
                 <span className="material-symbols-outlined text-[24px] text-gray-700">chevron_left</span>
               </button>
               <button
                 onClick={handleNext}
-                disabled={currentIndex >= maxIndex}
-                className={`absolute right-0 top-1/2 -translate-y-1/2 -mr-4 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-20 cursor-pointer ${currentIndex >= maxIndex ? 'opacity-0 pointer-events-none' : 'opacity-100'
-                  }`}
+                className="absolute right-0 top-1/2 -translate-y-1/2 -mr-4 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-20 cursor-pointer"
                 aria-label="Siguiente"
               >
                 <span className="material-symbols-outlined text-[24px] text-gray-700">chevron_right</span>

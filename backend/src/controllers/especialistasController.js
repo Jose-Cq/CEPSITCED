@@ -90,7 +90,8 @@ export const getEspecialistasLanding = async (req, res) => {
 
       // Construct studies list from formacion_1..4
       const estudios = [p.formacion_1, p.formacion_2, p.formacion_3, p.formacion_4]
-        .filter(f => f && String(f).trim() !== '');
+        .map(f => f ? String(f).trim() : '')
+        .filter(Boolean);
 
       // Fallback name if employee is hidden under RLS
       let fullName = 'Especialista Clínico';
@@ -100,7 +101,7 @@ export const getEspecialistasLanding = async (req, res) => {
         fullName = fallbackNamesMap[p.empleado_id];
       }
 
-      const cpspText = p.nro_cpsp ? (String(p.nro_cpsp).toLowerCase().includes('c.ps.p') ? p.nro_cpsp : `C.Ps.P. ${p.nro_cpsp}`) : 'C.Ps.P. Disponible';
+      const cpspText = p.nro_cpsp ? (String(p.nro_cpsp).toLowerCase().includes('c.ps.p') ? p.nro_cpsp : `C.Ps.P. ${p.nro_cpsp}`) : '';
 
       let specialtyText = 'Psicólogo(a)';
       if (cargoName) {
@@ -112,14 +113,23 @@ export const getEspecialistasLanding = async (req, res) => {
       specialists.push({
         id: p.id,
         empleado_id: p.empleado_id,
-        nombre: fullName,
-        especialidad: specialtyText,
-        colegiatura: cpspText,
-        descripcion: p.perfil_profesional || 'Especialista en psicología con enfoque integral.',
-        atencion: p.horario || 'Horarios a consultar. Modalidad Presencial y Virtual.',
+        nombreCompleto: fullName,
+        nombre: fullName, // Legacy
+        cargo: cargoName || 'Psicólogo(a)',
+        area: areaName || '',
+        especialidad: specialtyText, // Legacy
+        nroCpsp: cpspText,
+        colegiatura: cpspText || 'C.Ps.P. Disponible', // Legacy
+        horario: p.horario || 'Horarios a consultar. Modalidad Presencial y Virtual.',
+        atencion: p.horario || 'Horarios a consultar. Modalidad Presencial y Virtual.', // Legacy
         modalidad: p.modalidad || 'Presencial y Virtual',
-        estudios: estudios.length > 0 ? estudios : ['Licenciatura en Psicología'],
-        foto: p.imagen_perfil_url || null
+        imagenPerfilUrl: p.imagen_perfil_url || '',
+        foto: p.imagen_perfil_url || null, // Legacy
+        perfilProfesional: p.perfil_profesional || 'Especialista en psicología con enfoque integral.',
+        descripcion: p.perfil_profesional || 'Especialista en psicología con enfoque integral.', // Legacy
+        formaciones: estudios.length > 0 ? estudios : ['Licenciatura en Psicología'],
+        estudios: estudios.length > 0 ? estudios : ['Licenciatura en Psicología'], // Legacy
+        activo: p.activo !== undefined ? p.activo : true
       });
     }
 

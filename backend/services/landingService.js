@@ -42,3 +42,19 @@ export const obtenerTestimoniosLanding = async () => {
     return [];
   }
 };
+
+/**
+ * Obtiene las preguntas frecuentes (FAQs) activas para la landing.
+ * @returns {Promise<Array>}
+ */
+export const obtenerFaqsLanding = async () => {
+  try {
+    const res = await fetch('/api/landing/faq');
+    if (!res.ok) throw new Error('Error al obtener FAQs desde la API');
+    return await res.json();
+  } catch (err) {
+    console.error('Error en obtenerFaqsLanding:', err.message);
+    return [];
+  }
+};
+

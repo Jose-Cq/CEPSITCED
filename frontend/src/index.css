@@ -13,9 +13,55 @@
   }
 }
 
-/*
-.geometric-pattern {
-  background-color: #003178;
-  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 0l25.98 15v30L30 60 4.02 45V15z' fill-rule='evenodd' stroke='%23ffffff' stroke-opacity='0.1' stroke-width='1' fill='none'/%3E%3C/svg%3E");
-  background-size: 50px 50px;
+/* Global native smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Specialist Flip Card Styles */
+.specialist-card-container {
+  perspective: 1200px;
+  height: 640px;
+  width: 100%;
+}
+
+.specialist-card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  text-align: center;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+/* Flip on hover for desktop */
+@media (hover: hover) {
+  .specialist-card-container:hover .specialist-card-inner {
+    transform: rotateY(180deg);
+  }
+}
+
+/* Flip with active flipped class (tap on mobile) */
+.specialist-card-container.flipped .specialist-card-inner {
+  transform: rotateY(180deg);
+}
+
+.specialist-card-front,
+.specialist-card-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  border-radius: 24px;
+}
+
+.specialist-card-front {
+  z-index: 2;
+  transform: rotateY(0deg);
+}
+
+.specialist-card-back {
+  transform: rotateY(180deg);
+  z-index: 1;
 }

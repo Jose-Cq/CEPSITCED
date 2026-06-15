@@ -47,3 +47,22 @@ export const getTestimonios = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
+export const getFaq = async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('landing_faq')
+      .select('*')
+      .eq('activo', true)
+      .order('orden', { ascending: true });
+
+    if (error) {
+      console.warn('landing_faq table error, returning empty FAQs:', error.message);
+      return res.json([]);
+    }
+    return res.json(data || []);
+  } catch (err) {
+    console.warn('Error fetching FAQ from DB, returning empty FAQs:', err.message);
+    return res.json([]);
+  }
+};
