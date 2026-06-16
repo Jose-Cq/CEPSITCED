@@ -185,12 +185,13 @@ const Appointments = ({ onNavigate }) => {
 
   return (
     <DashboardLayout currentPath="/dashboard/appointments" onNavigate={onNavigate}>
-      <div className="w-full min-w-0 overflow-x-hidden">
-        <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
-          <div className="mb-10">
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">Mis Citas</h2>
-            <p className="text-gray-500 text-lg">Gestiona tus próximas sesiones y revisa visitas clínicas pasadas.</p>
-          </div>
+      <div className="w-full space-y-6">
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold text-slate-900 mb-2">Mis Citas</h2>
+          <p className="text-slate-500 text-sm md:text-base leading-relaxed">
+            Gestiona tus próximas sesiones y revisa visitas clínicas pasadas.
+          </p>
+        </div>
 
           {filterMemberId && (
             <div className="mb-8 p-4 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-between animate-fade-in">
@@ -577,7 +578,6 @@ const Appointments = ({ onNavigate }) => {
               </div>
             </div>
           )}
-        </div>
       </div>
     </DashboardLayout>
   );

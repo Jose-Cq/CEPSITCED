@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import ValidatedInput from './ValidatedInput';
 import { GRADOS_INSTRUCCION, ESTADOS_CIVILES } from '../constants/formOptions';
-import { generarNumeroHC, calcularEdad } from '../utils/generateHC';
-import { registrarPaciente, registrarPerfil, verificarDuplicadoDNI, obtenerUltimoNumeroHC, actualizarPaciente } from '../utils/supabaseHelpers';
+import { calcularEdad } from '../utils/generateHC';
+import { registrarPacienteConsolidado } from '../utils/supabaseHelpers';
 import { supabase } from '../supabaseClient';
 
 import countries from '../data/countries.json';
@@ -444,11 +444,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
 
   useEffect(() => {
     if (isOpen) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
+      // no-op, managed by App.jsx
     }
   }, [isOpen]);
 
@@ -662,136 +658,28 @@ const RegisterModal = ({ isOpen, onClose }) => {
     sessionStorage.setItem('is_registering', 'true');
 
     try {
-      // 1. Verificar duplicados de DNI en la base de datos (perfiles de usuario)
-      const patientDniDup = await verificarDuplicadoDNI(patientDniClean);
-      if (patientDniDup.error) {
-        throw new Error(`Error al verificar DNI del paciente: ${patientDniDup.error}`);
-      }
-      if (patientDniDup.duplicated) {
-        throw new Error('Ya existe un perfil registrado con este DNI.');
-      }
+      const response = await registrarPacienteConsolidado({
+        isProxy,
+        password,
+        patientData: finalPatientData,
+        proxyData: finalProxyData
+      });
 
-      if (isProxy) {
-        if (patientDniClean === proxyDniClean) {
-          throw new Error('El DNI del apoderado y del paciente no pueden ser iguales.');
-        }
-
-        const proxyDniDup = await verificarDuplicadoDNI(proxyDniClean);
-        if (proxyDniDup.error) {
-          throw new Error(`Error al verificar DNI del apoderado: ${proxyDniDup.error}`);
-        }
-        if (proxyDniDup.duplicated) {
-          throw new Error('Ya existe un perfil registrado con este DNI.');
-        }
+      if (!response.success) {
+        throw new Error(response.error);
       }
 
-      // 2. Obtener el último número de historia clínica
-      const ultimoHC = await obtenerUltimoNumeroHC();
+      // Iniciar sesión en el frontend usando la sesión devuelta si existe
+      const session = response.data?.authData?.session;
+      if (session) {
+        await supabase.auth.setSession({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token
+        });
+      }
 
-      // 3. Registrar según tipo (con o sin apoderado)
       if (!isProxy) {
-        // --- CASO: PACIENTE INDEPENDIENTE ---
-        const { numeroHC } = generarNumeroHC(
-          finalPatientData.fechaNacimiento,
-          finalPatientData.genero,
-          ultimoHC
-        );
-
-        const authEmail = finalPatientData.correoReal.trim().toLowerCase();
-
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: authEmail,
-          password,
-        });
-
-        if (authError) {
-          if (authError.message?.includes('rate limit')) throw new Error('Demasiados intentos. Espera unos minutos.');
-          throw new Error(`Error de registro: ${authError.message}`);
-        }
-
-        const authId = authData.user?.id;
-        if (!authId) throw new Error('No se pudo crear la cuenta de usuario.');
-
-        if (!numeroHC) throw new Error('Error al generar la Historia Clínica.');
-        if (!patientDniClean) throw new Error('El DNI del paciente es obligatorio.');
-        if (!finalPatientData.genero) throw new Error('El género del paciente es obligatorio.');
-        if (!finalPatientData.fechaNacimiento) throw new Error('La fecha de nacimiento del paciente es obligatoria.');
-
-        const perfilRes = await registrarPerfil({
-          id: authId,
-          dni: patientDniClean,
-          nombres: toTitleCase(finalPatientData.nombres) ?? null,
-          apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) ?? null,
-          apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) ?? null,
-          fecha_nacimiento: finalPatientData.fechaNacimiento,
-          telefono: finalPatientData.telefono ?? null,
-          correo: authEmail
-        });
-
-        if (!perfilRes.success) throw new Error(`Error de perfil: ${perfilRes.error}`);
-
-        // Verificar si ya existe el registro en pacientes por DNI antes de crear uno nuevo
-        const { data: pacienteExistente, error: errExistente } = await supabase
-          .from('pacientes')
-          .select('*')
-          .eq('dni', patientDniClean)
-          .maybeSingle();
-
-        if (errExistente) {
-          console.error('Error al buscar paciente existente:', errExistente);
-        }
-
-        let pacienteRes;
-        if (pacienteExistente) {
-          pacienteRes = await actualizarPaciente(pacienteExistente.id_paciente, {
-            id_perfil_propio: authId,
-            nombres: toTitleCase(finalPatientData.nombres) || pacienteExistente.nombres,
-            apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) || pacienteExistente.apellido_paterno,
-            apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) || pacienteExistente.apellido_materno,
-            telefono: finalPatientData.telefono || pacienteExistente.telefono,
-            correo: authEmail,
-            genero: finalPatientData.genero,
-            fecha_nacimiento: finalPatientData.fechaNacimiento,
-            pais: toTitleCase(finalPatientData.pais) || pacienteExistente.pais,
-            departamento: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.departamento) || pacienteExistente.departamento) : null,
-            provincia: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.provincia) || pacienteExistente.provincia) : null,
-            distrito: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.distrito) || pacienteExistente.distrito) : null,
-            direccion: toTitleCase(finalPatientData.direccion) || pacienteExistente.direccion,
-            lugar_familia: toTitleCase(finalPatientData.lugarFamilia) || pacienteExistente.lugar_familia,
-            estado_civil: toTitleCase(finalPatientData.estadoCivil) || pacienteExistente.estado_civil,
-            grado_instruccion: toTitleCase(finalPatientData.gradoInstruccion) || pacienteExistente.grado_instruccion,
-            ocupacion: toTitleCase(finalPatientData.ocupacion) || pacienteExistente.ocupacion
-          });
-        } else {
-          pacienteRes = await registrarPaciente({
-            numero_hc: numeroHC,
-            dni: patientDniClean,
-            genero: finalPatientData.genero,
-            fecha_nacimiento: finalPatientData.fechaNacimiento,
-            lugar_familia: toTitleCase(finalPatientData.lugarFamilia) ?? null,
-            estado_civil: toTitleCase(finalPatientData.estadoCivil) ?? null,
-            grado_instruccion: toTitleCase(finalPatientData.gradoInstruccion) ?? null,
-            ocupacion: toTitleCase(finalPatientData.ocupacion) ?? null,
-            direccion: toTitleCase(finalPatientData.direccion) ?? null,
-            telefono: finalPatientData.telefono ?? null,
-            correo: authEmail,
-            nombres: toTitleCase(finalPatientData.nombres) ?? null,
-            apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) ?? null,
-            apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) ?? null,
-            pais: toTitleCase(finalPatientData.pais) ?? null,
-            departamento: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.departamento) ?? null) : null,
-            provincia: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.provincia) ?? null) : null,
-            distrito: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.distrito) ?? null) : null,
-            estado_cuenta: 'INDEPENDIENTE',
-            id_perfil_propio: authId,
-            id_apoderado: null,
-            parentesco: null
-          });
-        }
-
-        if (!pacienteRes.success) throw new Error(`Error de paciente: ${pacienteRes.error}`);
-
-        const hcMostrada = pacienteExistente ? pacienteExistente.numero_hc : numeroHC;
+        const hcMostrada = response.data?.hcMostrada || '';
         setSuccessMessage(`¡Registro exitoso! Historia Clínica: ${hcMostrada}. Redirigiendo al portal...`);
         sessionStorage.removeItem('is_registering');
         setTimeout(() => {
@@ -799,171 +687,9 @@ const RegisterModal = ({ isOpen, onClose }) => {
           onClose();
           window.location.href = '/dashboard';
         }, 3000);
-
       } else {
-        // --- CASO: REGISTRO CON APODERADO ---
-        const pRes = generarNumeroHC(
-          finalPatientData.fechaNacimiento,
-          finalPatientData.genero,
-          ultimoHC
-        );
-        const patientHC = pRes.numeroHC;
-
-        const aRes = generarNumeroHC(
-          finalProxyData.fechaNacimiento,
-          finalProxyData.genero,
-          patientHC
-        );
-        const proxyHC = aRes.numeroHC;
-
-        const proxyAuthEmail = finalProxyData.correoReal.trim().toLowerCase();
-
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: proxyAuthEmail,
-          password,
-        });
-
-        if (authError) {
-          if (authError.message?.includes('rate limit')) throw new Error('Demasiados intentos. Espera unos minutos.');
-          throw new Error(`Error de registro apoderado: ${authError.message}`);
-        }
-
-        const authId = authData.user?.id;
-        if (!authId) throw new Error('No se pudo crear la cuenta del apoderado.');
-
-        if (!proxyHC) throw new Error('Error al generar la Historia Clínica del apoderado.');
-        if (!proxyDniClean) throw new Error('El DNI del apoderado es obligatorio.');
-        if (!finalProxyData.genero) throw new Error('El género del apoderado es obligatorio.');
-        if (!finalProxyData.fechaNacimiento) throw new Error('La fecha de nacimiento del apoderado es obligatoria.');
-
-        if (!patientHC) throw new Error('Error al generar la Historia Clínica del paciente.');
-        if (!patientDniClean) throw new Error('El DNI del paciente es obligatorio.');
-        if (!finalPatientData.genero) throw new Error('El género del paciente es obligatorio.');
-        if (!finalPatientData.fechaNacimiento) throw new Error('La fecha de nacimiento del paciente es obligatoria.');
-
-        const perfilRes = await registrarPerfil({
-          id: authId,
-          dni: proxyDniClean,
-          nombres: toTitleCase(finalProxyData.nombres) ?? null,
-          apellido_paterno: toTitleCase(finalProxyData.apellidoPaterno) ?? null,
-          apellido_materno: toTitleCase(finalProxyData.apellidoMaterno) ?? null,
-          fecha_nacimiento: finalProxyData.fechaNacimiento,
-          telefono: finalProxyData.telefono ?? null,
-          correo: proxyAuthEmail
-        });
-
-        if (!perfilRes.success) throw new Error(`Error de perfil de apoderado: ${perfilRes.error}`);
-
-        // Verificar si el apoderado ya existe en pacientes por DNI
-        const { data: apoderadoExistente, error: errApoExistente } = await supabase
-          .from('pacientes')
-          .select('*')
-          .eq('dni', proxyDniClean)
-          .maybeSingle();
-
-        if (errApoExistente) {
-          console.error('Error al buscar apoderado existente:', errApoExistente);
-        }
-
-        let apoderadoPacienteRes;
-        if (apoderadoExistente) {
-          apoderadoPacienteRes = await actualizarPaciente(apoderadoExistente.id_paciente, {
-            id_perfil_propio: authId,
-            nombres: toTitleCase(finalProxyData.nombres) || apoderadoExistente.nombres,
-            apellido_paterno: toTitleCase(finalProxyData.apellidoPaterno) || apoderadoExistente.apellido_paterno,
-            apellido_materno: toTitleCase(finalProxyData.apellidoMaterno) || apoderadoExistente.apellido_materno,
-            telefono: finalProxyData.telefono || apoderadoExistente.telefono,
-            correo: proxyAuthEmail,
-            genero: finalProxyData.genero,
-            fecha_nacimiento: finalProxyData.fechaNacimiento,
-            direccion: toTitleCase(finalPatientData.direccion) || apoderadoExistente.direccion
-          });
-        } else {
-          apoderadoPacienteRes = await registrarPaciente({
-            numero_hc: proxyHC,
-            dni: proxyDniClean,
-            genero: finalProxyData.genero,
-            fecha_nacimiento: finalProxyData.fechaNacimiento,
-            direccion: toTitleCase(finalPatientData.direccion) ?? null,
-            telefono: finalProxyData.telefono ?? null,
-            correo: proxyAuthEmail,
-            nombres: toTitleCase(finalProxyData.nombres) ?? null,
-            apellido_paterno: toTitleCase(finalProxyData.apellidoPaterno) ?? null,
-            apellido_materno: toTitleCase(finalProxyData.apellidoMaterno) ?? null,
-            pais: toTitleCase(finalPatientData.pais) ?? null,
-            departamento: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.departamento) ?? null) : null,
-            provincia: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.provincia) ?? null) : null,
-            distrito: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.distrito) ?? null) : null,
-            estado_cuenta: 'INDEPENDIENTE',
-            id_perfil_propio: authId,
-            id_apoderado: null,
-            parentesco: null
-          });
-        }
-
-        if (!apoderadoPacienteRes.success) throw new Error(`Error de paciente (apoderado): ${apoderadoPacienteRes.error}`);
-
-        // Verificar si el paciente dependiente ya existe en pacientes por DNI
-        const { data: pacienteExistente, error: errPacExistente } = await supabase
-          .from('pacientes')
-          .select('*')
-          .eq('dni', patientDniClean)
-          .maybeSingle();
-
-        if (errPacExistente) {
-          console.error('Error al buscar paciente dependiente existente:', errPacExistente);
-        }
-
-        let pacienteRes;
-        if (pacienteExistente) {
-          pacienteRes = await actualizarPaciente(pacienteExistente.id_paciente, {
-            id_apoderado: authId,
-            estado_cuenta: 'STANDBY',
-            parentesco: toTitleCase(finalProxyData.parentesco) || pacienteExistente.parentesco,
-            nombres: toTitleCase(finalPatientData.nombres) || pacienteExistente.nombres,
-            apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) || pacienteExistente.apellido_paterno,
-            apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) || pacienteExistente.apellido_materno,
-            telefono: finalProxyData.telefono || pacienteExistente.telefono,
-            correo: proxyAuthEmail,
-            genero: finalPatientData.genero,
-            fecha_nacimiento: finalPatientData.fechaNacimiento,
-            direccion: toTitleCase(finalPatientData.direccion) || pacienteExistente.direccion,
-            lugar_familia: toTitleCase(finalPatientData.lugarFamilia) || pacienteExistente.lugar_familia,
-            estado_civil: toTitleCase(finalPatientData.estadoCivil) || pacienteExistente.estado_civil,
-            grado_instruccion: toTitleCase(finalPatientData.gradoInstruccion) || pacienteExistente.grado_instruccion,
-            ocupacion: toTitleCase(finalPatientData.ocupacion) || pacienteExistente.ocupacion
-          });
-        } else {
-          pacienteRes = await registrarPaciente({
-            numero_hc: patientHC,
-            dni: patientDniClean,
-            genero: finalPatientData.genero,
-            fecha_nacimiento: finalPatientData.fechaNacimiento,
-            lugar_familia: toTitleCase(finalPatientData.lugarFamilia) ?? null,
-            estado_civil: toTitleCase(finalPatientData.estadoCivil) ?? null,
-            grado_instruccion: toTitleCase(finalPatientData.gradoInstruccion) ?? null,
-            ocupacion: toTitleCase(finalPatientData.ocupacion) ?? null,
-            direccion: toTitleCase(finalPatientData.direccion) ?? null,
-            telefono: finalProxyData.telefono ?? null,
-            correo: proxyAuthEmail,
-            nombres: toTitleCase(finalPatientData.nombres) ?? null,
-            apellido_paterno: toTitleCase(finalPatientData.apellidoPaterno) ?? null,
-            apellido_materno: toTitleCase(finalPatientData.apellidoMaterno) ?? null,
-            pais: toTitleCase(finalPatientData.pais) ?? null,
-            departamento: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.departamento) ?? null) : null,
-            provincia: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.provincia) ?? null) : null,
-            distrito: finalPatientData.pais === 'Perú' ? (toTitleCase(finalPatientData.distrito) ?? null) : null,
-            estado_cuenta: 'STANDBY',
-            id_perfil_propio: null,
-            id_apoderado: authId,
-            parentesco: toTitleCase(finalProxyData.parentesco) ?? null
-          });
-        }
-
-        if (!pacienteRes.success) throw new Error(`Error de paciente dependiente: ${pacienteRes.error}`);
-
-        const hcPacienteMostrada = pacienteExistente ? pacienteExistente.numero_hc : patientHC;
-        const hcApoderadoMostrada = apoderadoExistente ? apoderadoExistente.numero_hc : proxyHC;
+        const hcPacienteMostrada = response.data?.hcPacienteMostrada || '';
+        const hcApoderadoMostrada = response.data?.hcApoderadoMostrada || '';
         setSuccessMessage(`¡Registro exitoso! HC Paciente: ${hcPacienteMostrada}, HC Apoderado: ${hcApoderadoMostrada}. Redirigiendo al portal...`);
         sessionStorage.removeItem('is_registering');
         setTimeout(() => {

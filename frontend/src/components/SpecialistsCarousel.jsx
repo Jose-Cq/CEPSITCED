@@ -2,15 +2,42 @@ import React, { useState, useEffect, useRef } from 'react';
 import { obtenerEspecialistasLanding } from '@backend/services/especialistasService.js';
 import PsychologistCard from './PsychologistCard.jsx';
 
-const SpecialistsCarousel = ({ onOpenDetails, onOpenAuth }) => {
+const SpecialistsCarousel = ({ onOpenAuth }) => {
   const [specialists, setSpecialists] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [visibleColumns, setVisibleColumns] = useState(3);
   const [isHovered, setIsHovered] = useState(false);
   const [disableTransition, setDisableTransition] = useState(false);
+  const [touchStart, setTouchStart] = useState(null);
+  const [touchEnd, setTouchEnd] = useState(null);
 
   const isTransitioningRef = useRef(false);
+
+  const minSwipeDistance = 50;
+
+  const onTouchStart = (e) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+    setIsHovered(true);
+  };
+
+  const onTouchMove = (e) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    setIsHovered(false);
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    if (isLeftSwipe) {
+      handleNext();
+    } else if (isRightSwipe) {
+      handlePrev();
+    }
+  };
 
   // Responsive columns detect
   useEffect(() => {
@@ -18,7 +45,7 @@ const SpecialistsCarousel = ({ onOpenDetails, onOpenAuth }) => {
       const width = window.innerWidth;
       if (width >= 1024) {
         setVisibleColumns(3);
-      } else if (width >= 768) {
+      } else if (width >= 620) {
         setVisibleColumns(2);
       } else {
         setVisibleColumns(1);
@@ -32,7 +59,17 @@ const SpecialistsCarousel = ({ onOpenDetails, onOpenAuth }) => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Fetch active specialists
+  const handleMouseEnter = () => {
+    if (window.matchMedia('(hover: hover)').matches) {
+      setIsHovered(true);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (window.matchMedia('(hover: hover)').matches) {
+      setIsHovered(false);
+    }
+  };
   useEffect(() => {
     const loadSpecialists = async () => {
       setLoading(true);
@@ -43,7 +80,7 @@ const SpecialistsCarousel = ({ onOpenDetails, onOpenAuth }) => {
     loadSpecialists();
   }, []);
 
-  const isSlider = specialists.length > 3;
+  const isSlider = specialists.length > visibleColumns;
   const extendedSpecialists = isSlider 
     ? [...specialists, ...specialists.slice(0, visibleColumns)] 
     : specialists;
@@ -62,7 +99,8 @@ const SpecialistsCarousel = ({ onOpenDetails, onOpenAuth }) => {
     setCurrentIndex((prev) => prev - 1);
   };
 
-  const handleTransitionEnd = () => {
+  const handleTransitionEnd = (e) => {
+    if (e && e.target !== e.currentTarget) return;
     isTransitioningRef.current = false;
     if (currentIndex >= specialists.length) {
       setDisableTransition(true);
@@ -131,8 +169,8 @@ const SpecialistsCarousel = ({ onOpenDetails, onOpenAuth }) => {
               <div key={psico.id} className="w-full max-w-[360px] mx-auto flex flex-col h-full text-left">
                 <PsychologistCard
                   psychologist={psico}
-                  onOpenDetails={() => onOpenDetails(psico)}
                   onOpenAuth={onOpenAuth}
+                  resetFlipKey={currentIndex}
                 />
               </div>
             ))}
@@ -141,8 +179,11 @@ const SpecialistsCarousel = ({ onOpenDetails, onOpenAuth }) => {
           /* Slider Container with Forward Infinite Loop and Hover Controls */
           <div 
             className="relative"
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
           >
             <div className="overflow-hidden">
               <div
@@ -162,8 +203,8 @@ const SpecialistsCarousel = ({ onOpenDetails, onOpenAuth }) => {
                     <div className="w-full max-w-[360px] mx-auto flex flex-col h-full">
                       <PsychologistCard
                         psychologist={psico}
-                        onOpenDetails={() => onOpenDetails(psico)}
                         onOpenAuth={onOpenAuth}
+                        resetFlipKey={currentIndex}
                       />
                     </div>
                   </div>
@@ -175,14 +216,14 @@ const SpecialistsCarousel = ({ onOpenDetails, onOpenAuth }) => {
             <>
               <button
                 onClick={handlePrev}
-                className="absolute left-0 top-1/2 -translate-y-1/2 -ml-4 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-20 cursor-pointer"
+                className="absolute left-2 lg:left-0 top-1/2 -translate-y-1/2 lg:-ml-6 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-30 cursor-pointer"
                 aria-label="Anterior"
               >
                 <span className="material-symbols-outlined text-[24px] text-gray-700">chevron_left</span>
               </button>
               <button
                 onClick={handleNext}
-                className="absolute right-0 top-1/2 -translate-y-1/2 -mr-4 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-20 cursor-pointer"
+                className="absolute right-2 lg:right-0 top-1/2 -translate-y-1/2 lg:-mr-6 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-30 cursor-pointer"
                 aria-label="Siguiente"
               >
                 <span className="material-symbols-outlined text-[24px] text-gray-700">chevron_right</span>

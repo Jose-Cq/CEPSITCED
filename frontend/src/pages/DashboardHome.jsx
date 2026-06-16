@@ -128,9 +128,11 @@ const DashboardHome = () => {
 
   return (
     <DashboardLayout currentPath="/dashboard">
-      <div className="mb-10">
-        <h2 className="text-3xl font-bold text-gray-900 mb-2">Inicio</h2>
-        <p className="text-gray-500 text-lg">Bienvenido a tu portal clínico. Aquí puedes gestionar tu salud emocional.</p>
+      <div className="mb-8">
+        <h2 className="text-3xl font-bold text-slate-900 mb-2">Inicio</h2>
+        <p className="text-slate-500 text-sm md:text-base leading-relaxed">
+          Bienvenido a tu portal clínico. Aquí puedes gestionar tu salud emocional.
+        </p>
       </div>
 
       {loading && (

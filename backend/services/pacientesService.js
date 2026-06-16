@@ -61,9 +61,10 @@ export const cerrarSesion = async () => {
 /**
  * Obtiene el último número de historia clínica desde la API.
  */
-export const obtenerUltimoNumeroHC = async () => {
+export const obtenerUltimoNumeroHC = async (suffix) => {
   try {
-    const res = await fetch('/api/pacientes/ultimo-hc');
+    const url = suffix ? `/api/pacientes/ultimo-hc?suffix=${suffix}` : '/api/pacientes/ultimo-hc';
+    const res = await fetch(url);
     if (!res.ok) throw new Error('Error al obtener el último HC');
     const result = await res.json();
     return result.data || null;
@@ -239,6 +240,78 @@ export const obtenerEmpleados = async () => {
     return { success: true, data: result.data };
   } catch (error) {
     console.error('Error en obtenerEmpleados:', error.message);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Registra un paciente (independiente o apoderado + dependiente) de forma consolidada y atómica en el backend.
+ */
+export const registrarPacienteConsolidado = async (payload) => {
+  try {
+    const res = await fetch('/api/pacientes/registrar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Error al procesar el registro.');
+    return { success: true, data: result.data };
+  } catch (error) {
+    console.error('Error en registrarPacienteConsolidado:', error.message);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Solicita recuperar el acceso al portal (bifurcado en recuperación normal o independización).
+ */
+export const recuperarAcceso = async (dni, sendEmail = false) => {
+  try {
+    const res = await fetch('/api/pacientes/recuperar-acceso', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dni, sendEmail })
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Error al solicitar recuperación de acceso.');
+    return { success: true, data: result };
+  } catch (error) {
+    console.error('Error en recuperarAcceso (service):', error.message);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Verifica la validez de un token de independización.
+ */
+export const verificarTokenIndependizacion = async (token) => {
+  try {
+    const res = await fetch(`/api/pacientes/independizacion/verificar?token=${encodeURIComponent(token)}`);
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Token inválido o expirado.');
+    return { success: true, data: result.data };
+  } catch (error) {
+    console.error('Error en verificarTokenIndependizacion (service):', error.message);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Completa el proceso de independización creando la cuenta y perfil de acceso.
+ */
+export const completarIndependizacion = async (payload) => {
+  try {
+    const res = await fetch('/api/pacientes/independizacion/completar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Error al completar la activación de cuenta.');
+    return { success: true, data: result };
+  } catch (error) {
+    console.error('Error en completarIndependizacion (service):', error.message);
     return { success: false, error: error.message };
   }
 };

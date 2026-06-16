@@ -13,7 +13,11 @@ export {
   obtenerPacientesAsociados,
   obtenerApoderados,
   obtenerDocumentosPaciente,
-  obtenerEmpleados
+  obtenerEmpleados,
+  registrarPacienteConsolidado,
+  recuperarAcceso,
+  verificarTokenIndependizacion,
+  completarIndependizacion
 } from '@backend/services/pacientesService.js';
 
 export {

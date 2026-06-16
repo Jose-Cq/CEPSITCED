@@ -11,7 +11,11 @@ import {
   putActualizarPaciente,
   getPacientesAsociados,
   getDocumentosPaciente,
-  getEmpleados
+  getEmpleados,
+  registrarPacienteConsolidado,
+  recuperarAcceso,
+  verificarTokenIndependizacion,
+  completarIndependizacion
 } from '../controllers/pacientesController.js';
 
 const router = express.Router();
@@ -20,6 +24,10 @@ const router = express.Router();
 router.post('/iniciar-sesion', login);
 router.get('/ultimo-hc', getUltimoNumeroHC);
 router.get('/verificar-dni', getVerificarDuplicadoDNI);
+router.post('/registrar', registrarPacienteConsolidado);
+router.post('/recuperar-acceso', recuperarAcceso);
+router.get('/independizacion/verificar', verificarTokenIndependizacion);
+router.post('/independizacion/completar', completarIndependizacion);
 
 // Protected routes (require valid session token)
 router.post('/perfil', requireAuth, postRegistrarPerfil);

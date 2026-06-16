@@ -5,8 +5,35 @@ const TestimonialsCarousel = ({ testimonios = [] }) => {
   const [visibleColumns, setVisibleColumns] = useState(3);
   const [isHovered, setIsHovered] = useState(false);
   const [disableTransition, setDisableTransition] = useState(false);
+  const [touchStart, setTouchStart] = useState(null);
+  const [touchEnd, setTouchEnd] = useState(null);
 
   const isTransitioningRef = useRef(false);
+
+  const minSwipeDistance = 50;
+
+  const onTouchStart = (e) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+    setIsHovered(true);
+  };
+
+  const onTouchMove = (e) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    setIsHovered(false);
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    if (isLeftSwipe) {
+      handleNext();
+    } else if (isRightSwipe) {
+      handlePrev();
+    }
+  };
 
   // Responsive columns detect
   useEffect(() => {
@@ -14,7 +41,7 @@ const TestimonialsCarousel = ({ testimonios = [] }) => {
       const width = window.innerWidth;
       if (width >= 1024) {
         setVisibleColumns(3);
-      } else if (width >= 768) {
+      } else if (width >= 620) {
         setVisibleColumns(2);
       } else {
         setVisibleColumns(1);
@@ -27,6 +54,18 @@ const TestimonialsCarousel = ({ testimonios = [] }) => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  const handleMouseEnter = () => {
+    if (window.matchMedia('(hover: hover)').matches) {
+      setIsHovered(true);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (window.matchMedia('(hover: hover)').matches) {
+      setIsHovered(false);
+    }
+  };
 
   const isSlider = testimonios.length > visibleColumns;
   const extendedTestimonios = isSlider 
@@ -47,7 +86,8 @@ const TestimonialsCarousel = ({ testimonios = [] }) => {
     setCurrentIndex((prev) => prev - 1);
   };
 
-  const handleTransitionEnd = () => {
+  const handleTransitionEnd = (e) => {
+    if (e && e.target !== e.currentTarget) return;
     isTransitioningRef.current = false;
     if (currentIndex >= testimonios.length) {
       setDisableTransition(true);
@@ -158,8 +198,11 @@ const TestimonialsCarousel = ({ testimonios = [] }) => {
           /* Sliding Track with infinite forward loop and hover controls */
           <div 
             className="relative"
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
           >
             <div className="overflow-hidden">
               <div
@@ -186,14 +229,14 @@ const TestimonialsCarousel = ({ testimonios = [] }) => {
             <>
               <button
                 onClick={handlePrev}
-                className="absolute left-0 top-1/2 -translate-y-1/2 -ml-4 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-20 cursor-pointer"
+                className="absolute left-2 lg:left-0 top-1/2 -translate-y-1/2 lg:-ml-6 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-40 cursor-pointer pointer-events-auto"
                 aria-label="Anterior"
               >
                 <span className="material-symbols-outlined text-[24px] text-gray-700">chevron_left</span>
               </button>
               <button
                 onClick={handleNext}
-                className="absolute right-0 top-1/2 -translate-y-1/2 -mr-4 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-20 cursor-pointer"
+                className="absolute right-2 lg:right-0 top-1/2 -translate-y-1/2 lg:-mr-6 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-40 cursor-pointer pointer-events-auto"
                 aria-label="Siguiente"
               >
                 <span className="material-symbols-outlined text-[24px] text-gray-700">chevron_right</span>

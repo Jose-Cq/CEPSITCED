@@ -81,13 +81,14 @@ const Documents = ({ onNavigate }) => {
 
   return (
     <DashboardLayout currentPath="/dashboard/documents" onNavigate={onNavigate}>
-      {/* Encabezado de página */}
-      <div className="mb-8">
-        <h2 className="text-3xl font-bold text-gray-900 tracking-tight">Mis Documentos</h2>
-        <p className="text-gray-500 text-lg mt-2">
-          Accede a tus informes clínicos, evaluaciones y archivos compartidos de forma segura.
-        </p>
-      </div>
+      <div className="w-full space-y-6">
+        {/* Encabezado de página */}
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold text-slate-900 mb-2">Mis Documentos</h2>
+          <p className="text-slate-500 text-sm md:text-base leading-relaxed">
+            Accede a tus informes clínicos, evaluaciones y archivos compartidos de forma segura.
+          </p>
+        </div>
 
       {loading && (
         <div className="flex justify-center items-center py-20">
@@ -186,6 +187,7 @@ const Documents = ({ onNavigate }) => {
           </div>
         </>
       )}
+      </div>
     </DashboardLayout>
   );
 };

@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { usePacienteActual } from '../hooks/usePacienteActual';
-import { registrarPaciente, actualizarPaciente, obtenerUltimoNumeroHC } from '../utils/supabaseHelpers';
-import { generarNumeroHC } from '../utils/generateHC';
+import { registrarPaciente, actualizarPaciente } from '../utils/supabaseHelpers';
 import { supabase } from '../supabaseClient';
 import { GRADOS_INSTRUCCION, ESTADOS_CIVILES } from '../constants/formOptions';
 
@@ -281,20 +280,11 @@ const Profile = ({ onNavigate }) => {
         if (!res.success) throw new Error(res.error || 'Error al actualizar la ficha clínica.');
       } else {
         // --- CASO: CREACIÓN AUTOMÁTICA DE FICHA CLÍNICA ---
-        const ultimoHC = await obtenerUltimoNumeroHC();
-        const { numeroHC } = generarNumeroHC(
-          perfilUsuario.fecha_nacimiento,
-          clinicalData.genero,
-          ultimoHC
-        );
-
         // Validar obligatorios antes de insertar
-        if (!numeroHC) throw new Error('Error al generar la Historia Clínica.');
         if (!perfilUsuario.dni) throw new Error('El DNI del usuario es obligatorio.');
         if (!perfilUsuario.fecha_nacimiento) throw new Error('La fecha de nacimiento del usuario es obligatoria.');
 
         const res = await registrarPaciente({
-          numero_hc: numeroHC,
           dni: perfilUsuario.dni,
           nombres: toTitleCase(clinicalData.nombres) ?? null,
           apellido_paterno: toTitleCase(clinicalData.apellido_paterno) ?? null,
@@ -366,12 +356,12 @@ const Profile = ({ onNavigate }) => {
 
   return (
     <DashboardLayout currentPath="/dashboard/profile" onNavigate={onNavigate}>
-      <div className="max-w-6xl mx-auto font-['Manrope']">
+      <div className="w-full space-y-6">
         {/* Encabezado y Alerta de Ficha Incompleta */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Mi Perfil</h1>
-            <p className="text-gray-500 text-sm">
+            <h2 className="text-3xl font-bold text-slate-900 mb-2">Mi Perfil</h2>
+            <p className="text-slate-500 text-sm md:text-base leading-relaxed">
               Administra tus datos de usuario, de contacto y tu Ficha Clínica personal.
             </p>
           </div>

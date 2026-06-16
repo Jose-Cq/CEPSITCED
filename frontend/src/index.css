@@ -13,9 +13,11 @@
   }
 }
 
-/* Global native smooth scrolling */
-html {
+/* Global native smooth scrolling and horizontal overflow prevention */
+html, body {
   scroll-behavior: smooth;
+  overflow-x: hidden;
+  width: 100%;
 }
 
 /* Specialist Flip Card Styles */
@@ -65,3 +67,22 @@ html {
   transform: rotateY(180deg);
   z-index: 1;
 }
+
+/* Responsive navbar classes for 1040px breakpoint */
+@media (min-width: 1040px) {
+  .nav-desktop-only {
+    display: flex !important;
+  }
+  .nav-mobile-only {
+    display: none !important;
+  }
+}
+@media (max-width: 1039px) {
+  .nav-desktop-only {
+    display: none !important;
+  }
+  .nav-mobile-only {
+    display: flex !important;
+  }
+}
+

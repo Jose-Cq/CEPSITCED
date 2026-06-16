@@ -35,8 +35,35 @@ const ServicesCarousel = ({ onOpenAuth }) => {
   const [visibleColumns, setVisibleColumns] = useState(3);
   const [isHovered, setIsHovered] = useState(false);
   const [disableTransition, setDisableTransition] = useState(false);
+  const [touchStart, setTouchStart] = useState(null);
+  const [touchEnd, setTouchEnd] = useState(null);
   
   const isTransitioningRef = useRef(false);
+
+  const minSwipeDistance = 50;
+
+  const onTouchStart = (e) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+    setIsHovered(true);
+  };
+
+  const onTouchMove = (e) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    setIsHovered(false);
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    if (isLeftSwipe) {
+      handleNext();
+    } else if (isRightSwipe) {
+      handlePrev();
+    }
+  };
 
   // Detect responsive visible columns
   useEffect(() => {
@@ -44,7 +71,7 @@ const ServicesCarousel = ({ onOpenAuth }) => {
       const width = window.innerWidth;
       if (width >= 1024) {
         setVisibleColumns(3);
-      } else if (width >= 768) {
+      } else if (width >= 620) {
         setVisibleColumns(2);
       } else {
         setVisibleColumns(1);
@@ -57,6 +84,18 @@ const ServicesCarousel = ({ onOpenAuth }) => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  const handleMouseEnter = () => {
+    if (window.matchMedia('(hover: hover)').matches) {
+      setIsHovered(true);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (window.matchMedia('(hover: hover)').matches) {
+      setIsHovered(false);
+    }
+  };
 
   // Fetch locales and all services initially
   useEffect(() => {
@@ -119,7 +158,8 @@ const ServicesCarousel = ({ onOpenAuth }) => {
     setCurrentIndex((prev) => prev - 1);
   };
 
-  const handleTransitionEnd = () => {
+  const handleTransitionEnd = (e) => {
+    if (e && e.target !== e.currentTarget) return;
     isTransitioningRef.current = false;
     if (currentIndex >= services.length) {
       setDisableTransition(true);
@@ -160,23 +200,23 @@ const ServicesCarousel = ({ onOpenAuth }) => {
 
   // Single card rendering helper
   const renderCard = (service) => (
-    <div className="group bg-white rounded-3xl border border-slate-100 p-6 h-[340px] hover:shadow-xl hover:border-blue-200 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between text-left">
-      <div>
+    <div className={`group bg-white rounded-3xl border border-slate-100 p-6 h-[340px] hover:shadow-xl hover:border-blue-200 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between ${visibleColumns === 1 ? 'text-center items-center' : 'text-left'}`}>
+      <div className="w-full flex flex-col min-w-0">
         {/* Upper Icon */}
-        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-[#003178] group-hover:bg-[#003178] group-hover:text-white transition-all duration-300">
-          <span className="material-symbols-outlined text-[24px]">
+        <div className={`mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-[#003178] group-hover:bg-[#003178] group-hover:text-white transition-all duration-300 ${visibleColumns === 1 ? 'mx-auto' : ''}`}>
+          <span className="material-symbols-outlined text-[24px] leading-none flex items-center justify-center">
             {service.icono || getServiceFallbackIcon(service.nombre_servicio)}
           </span>
         </div>
-        <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-1 leading-snug">{service.nombre_servicio}</h3>
-        <p className="text-gray-550 text-xs leading-relaxed line-clamp-3">
+        <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-1 leading-snug w-full">{service.nombre_servicio}</h3>
+        <p className="text-gray-550 text-xs leading-relaxed line-clamp-3 w-full">
           {service.descripcion || getServiceFallbackDesc(service.nombre_servicio)}
         </p>
       </div>
 
-      <div className="space-y-3 pt-3 border-t border-slate-50">
+      <div className="space-y-3 pt-3 border-t border-slate-50 w-full">
         {/* Price or Consult */}
-        <div className="text-left font-black text-lg text-[#003178]">
+        <div className={`font-black text-lg text-[#003178] ${visibleColumns === 1 ? 'text-center' : 'text-left'}`}>
           {service.precio_sesion ? formatSoles(service.precio_sesion) : 'A consultar'}
         </div>
 
@@ -260,8 +300,11 @@ const ServicesCarousel = ({ onOpenAuth }) => {
           /* Responsive Infinite Loop Forward Slider with Hover Controls */
           <div 
             className="relative"
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
           >
             {/* Carousel Container */}
             <div className="overflow-hidden">
@@ -289,14 +332,14 @@ const ServicesCarousel = ({ onOpenAuth }) => {
             <>
               <button
                 onClick={handlePrev}
-                className="absolute left-0 top-1/2 -translate-y-1/2 -ml-4 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-20 cursor-pointer"
+                className="absolute left-2 lg:left-0 top-1/2 -translate-y-1/2 lg:-ml-6 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-40 cursor-pointer pointer-events-auto"
                 aria-label="Anterior"
               >
                 <span className="material-symbols-outlined text-[24px] text-gray-700">chevron_left</span>
               </button>
               <button
                 onClick={handleNext}
-                className="absolute right-0 top-1/2 -translate-y-1/2 -mr-4 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-20 cursor-pointer"
+                className="absolute right-2 lg:right-0 top-1/2 -translate-y-1/2 lg:-mr-6 w-12 h-12 bg-white rounded-full border border-slate-100 flex items-center justify-center shadow-lg hover:bg-slate-50 transition-all z-40 cursor-pointer pointer-events-auto"
                 aria-label="Siguiente"
               >
                 <span className="material-symbols-outlined text-[24px] text-gray-700">chevron_right</span>

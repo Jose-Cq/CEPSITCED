@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 const getInitials = (value = '') => {
   const safeValue = String(value || 'Especialista').trim();
@@ -11,8 +11,12 @@ const getInitials = (value = '') => {
     .toUpperCase();
 };
 
-const PsychologistCard = ({ psychologist, onOpenDetails, onOpenAuth }) => {
+const PsychologistCard = ({ psychologist, onOpenAuth, resetFlipKey }) => {
   const [isFlipped, setIsFlipped] = useState(false);
+
+  useEffect(() => {
+    setIsFlipped(false);
+  }, [resetFlipKey]);
 
   const safeName = psychologist?.nombreCompleto || psychologist?.nombre || 'Especialista';
   const safeCargo = String(psychologist?.cargo || 'Psicólogo(a)').toUpperCase();
@@ -24,9 +28,31 @@ const PsychologistCard = ({ psychologist, onOpenDetails, onOpenAuth }) => {
   const safeModalidad = psychologist?.modalidad || 'Presencial y Virtual';
   const safeEstudios = psychologist?.formaciones || psychologist?.estudios || ['Licenciatura en Psicología'];
 
+  const touchStartPos = useRef({ x: 0, y: 0 });
+  const hasMoved = useRef(false);
+
+  const handleTouchStart = (e) => {
+    const touch = e.touches[0];
+    touchStartPos.current = { x: touch.clientX, y: touch.clientY };
+    hasMoved.current = false;
+  };
+
+  const handleTouchMove = (e) => {
+    const touch = e.touches[0];
+    const dx = Math.abs(touch.clientX - touchStartPos.current.x);
+    const dy = Math.abs(touch.clientY - touchStartPos.current.y);
+    if (dx > 10 || dy > 10) {
+      hasMoved.current = true;
+    }
+  };
+
   const handleCardClick = (e) => {
     // If user clicked any element with "no-flip", don't flip
     if (e.target.closest('.no-flip')) {
+      return;
+    }
+    // If user was swiping, don't flip
+    if (hasMoved.current) {
       return;
     }
     const isTouch = window.matchMedia('(hover: none)').matches;
@@ -39,6 +65,8 @@ const PsychologistCard = ({ psychologist, onOpenDetails, onOpenAuth }) => {
     <div
       className={`specialist-card-container ${isFlipped ? 'flipped' : ''}`}
       onClick={handleCardClick}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
     >
       <div className="specialist-card-inner">
         
@@ -83,14 +111,12 @@ const PsychologistCard = ({ psychologist, onOpenDetails, onOpenAuth }) => {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onOpenDetails();
+                setIsFlipped(true);
               }}
-              className="no-flip mt-4 w-full py-2.5 bg-gray-55 bg-gray-50 hover:bg-[#003178] text-[#003178] hover:text-white font-bold rounded-2xl transition-all duration-300 text-xs flex items-center justify-center gap-2 cursor-pointer flex-shrink-0"
+              className="no-flip mt-4 w-full py-2.5 bg-[#003178] hover:bg-blue-900 text-white font-bold rounded-2xl transition-all duration-300 text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm flex-shrink-0"
             >
               <span>Conoce más</span>
-              <span className="material-symbols-outlined text-[16px]">
-                arrow_forward
-              </span>
+              <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
             </button>
           </div>
         </div>

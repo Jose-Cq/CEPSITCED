@@ -75,7 +75,7 @@ const MissionVisionSection = ({ config = null, loading = false }) => {
 
           {/* Left Side: Elegant Image */}
           <div
-            className={`lg:col-span-5 flex flex-col items-stretch transition-all duration-1000 transform ${isVisible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-12'
+            className={`hidden lg:flex lg:col-span-5 flex-col items-stretch transition-all duration-1000 transform ${isVisible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-12'
               }`}
           >
             <div className="relative w-full rounded-3xl border border-slate-100/80 bg-white p-8 shadow-sm hover:shadow-md hover:border-blue-200 transition-all duration-300 flex flex-col items-center justify-center min-h-[420px] flex-1">
@@ -97,7 +97,7 @@ const MissionVisionSection = ({ config = null, loading = false }) => {
 
           {/* Right Side: Composition of Mission & Vision */}
           <div
-            className={`lg:col-span-7 space-y-8 transition-all duration-1000 transform ${isVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-12'
+            className={`col-span-12 lg:col-span-7 space-y-8 transition-all duration-1000 transform ${isVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-12'
               }`}
           >
             {/* Misión Card */}

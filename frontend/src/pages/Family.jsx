@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { usePacienteActual } from '../hooks/usePacienteActual';
-import { registrarPaciente, obtenerUltimoNumeroHC } from '../utils/supabaseHelpers';
-import { calcularEdad, generarNumeroHC } from '../utils/generateHC';
+import { registrarPaciente } from '../utils/supabaseHelpers';
+import { calcularEdad } from '../utils/generateHC';
 import { supabase } from '../supabaseClient';
 import { GRADOS_INSTRUCCION, ESTADOS_CIVILES } from '../constants/formOptions';
 
@@ -620,19 +620,8 @@ const Family = () => {
         throw new Error('Este número de documento ya se encuentra registrado en el sistema.');
       }
 
-      // 2. Obtener el último número de historia clínica
-      const ultimoHC = await obtenerUltimoNumeroHC();
-
-      // 3. Generar número de HC
-      const { numeroHC } = generarNumeroHC(
-        newProfile.fechaNacimiento,
-        newProfile.genero,
-        ultimoHC
-      );
-
-      // 4. Registrar en la tabla pacientes
+      // 2. Registrar en la tabla pacientes (el backend generará el numero_hc automáticamente)
       const res = await registrarPaciente({
-        numero_hc: numeroHC ?? null,
         dni: newProfile.dni ?? null,
         nombres: toTitleCase(newProfile.nombres) ?? null,
         apellido_paterno: toTitleCase(newProfile.apellidoPaterno) ?? null,
@@ -697,23 +686,24 @@ const Family = () => {
   }));
 
   return (
-    <DashboardLayout currentPath="/dashboard/family font-['Manrope']">
-      {/* Encabezado de página */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Miembros de la Cuenta</h2>
-          <p className="text-gray-500 text-lg max-w-2xl">
-            Gestiona los miembros clínicos de tus hijos, familiares o dependientes para agendar sus citas.
-          </p>
+    <DashboardLayout currentPath="/dashboard/family">
+      <div className="w-full space-y-6">
+        {/* Encabezado de página */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
+          <div>
+            <h2 className="text-3xl font-bold text-slate-900 mb-2">Miembros de la Cuenta</h2>
+            <p className="text-slate-500 text-sm md:text-base leading-relaxed">
+              Gestiona los miembros clínicos de tus hijos, familiares o dependientes para agendar sus citas.
+            </p>
+          </div>
+          <button
+            onClick={handleOpenAddModal}
+            className="bg-[#003178] text-white rounded-lg px-5 py-2.5 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-blue-900 transition-all shadow-sm active:scale-[0.98] shrink-0 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px]">person_add</span>
+            Agregar Miembro
+          </button>
         </div>
-        <button
-          onClick={handleOpenAddModal}
-          className="bg-[#003178] text-white rounded-lg px-5 py-2.5 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-blue-900 transition-all shadow-sm active:scale-[0.98] shrink-0 cursor-pointer"
-        >
-          <span className="material-symbols-outlined text-[18px]">person_add</span>
-          Agregar Miembro
-        </button>
-      </div>
 
       {loading ? (
         <div className="flex justify-center items-center py-20">
@@ -1613,6 +1603,7 @@ const Family = () => {
           </div>
         </div>
       )}
+      </div>
     </DashboardLayout>
   );
 };
