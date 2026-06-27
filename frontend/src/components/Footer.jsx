@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { obtenerLocalesActivos } from '@backend/services/serviciosService.js';
 
-const Footer = () => {
+const Footer = ({ config }) => {
   const [locales, setLocales] = useState([]);
 
   useEffect(() => {
@@ -33,15 +33,19 @@ const Footer = () => {
             <li>
               <a href="#inicio" className="hover:text-white transition-colors">Inicio</a>
             </li>
-            <li>
-              <a href="#nosotros" className="hover:text-white transition-colors">Nosotros</a>
-            </li>
+            {config?.mostrar_nosotros !== false && (
+              <li>
+                <a href="#nosotros" className="hover:text-white transition-colors">Nosotros</a>
+              </li>
+            )}
             <li>
               <a href="#servicios" className="hover:text-white transition-colors">Servicios Clínicos</a>
             </li>
-            <li>
-              <a href="#specialists" className="hover:text-white transition-colors">Especialistas</a>
-            </li>
+            {config?.mostrar_personal !== false && (
+              <li>
+                <a href="#specialists" className="hover:text-white transition-colors">Especialistas</a>
+              </li>
+            )}
             <li>
               <a href="#faq" className="hover:text-white transition-colors">Preguntas Frecuentes</a>
             </li>

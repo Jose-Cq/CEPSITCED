@@ -1,136 +1,52 @@
-import { useState, useEffect, Fragment, useMemo, useRef } from 'react';
+import { useState, useEffect, Fragment, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { usePacienteActual } from '../hooks/usePacienteActual';
 import {
-  obtenerPaquetes,
   crearCita,
   obtenerMetodosPagoClinica
 } from '../utils/supabaseHelpers';
 import { supabase } from '../supabaseClient';
 
-const BUFFER_MINUTOS = 30;
+// Helper imports from previous phases
+import {
+  BUFFER_MINUTOS,
+  parseTimeToMinutes,
+  obtenerSlotsLibresDia,
+  filtrarSlotsPorCapacidadLocal
+} from '../utils/schedulerHelper';
+import {
+  formatDateStr,
+  formatPhoneNumber
+} from '../utils/appointmentFormatters';
+import { isProfileIncomplete } from '../utils/validators';
+import { obtenerPrecioAplicable } from '../utils/pricingHelper';
+import { fetchAndValidateCoupon } from '../utils/couponService';
 
-const parseTimeToMinutes = (timeStr) => {
-  if (!timeStr) return 0;
-  const [h, m] = timeStr.split(':').map(Number);
-  return h * 60 + (m || 0);
-};
+// Component imports
+import ReservationSummary from '../components/ReservationSummary';
+import StepPatientSelection from '../components/StepPatientSelection';
+import CalendarDayCard from '../components/CalendarDayCard';
+import TimeSlotCard from '../components/TimeSlotCard';
+import PaymentSummaryCard from '../components/PaymentSummaryCard';
+import PaymentMethodCard from '../components/PaymentMethodCard';
 
-/**
- * Genera bloques de 30 minutos dentro del rango laboral de la jornada.
- * Valida que cada slot tenga suficiente espacio para completarse dentro de la jornada laboral.
- */
-const generarSlots30Min = (horaInicioShift, horaFinShift, duracionServicioMinutos) => {
-  const formatMinutesToTime = (minutes) => {
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-  };
-
-  const slots = [];
-  const shiftStartMin = parseTimeToMinutes(horaInicioShift);
-  const shiftEndMin = parseTimeToMinutes(horaFinShift);
-
-  for (let min = shiftStartMin; min + duracionServicioMinutos <= shiftEndMin; min += 30) {
-    slots.push({
-      inicio: formatMinutesToTime(min),
-      fin: formatMinutesToTime(min + duracionServicioMinutos)
-    });
-  }
-
-  return slots;
-};
-
-/**
- * Filtra y obtiene los slots libres de 30 minutos considerando bloqueos y citas activas.
- */
-const obtenerSlotsLibresDia = (horarios, citas, duracionServicioMinutos, bufferMinutos = BUFFER_MINUTOS) => {
-  // 1. Obtener rangos laborales (disponible = true, tipo !== 'salida', tipo !== 'otro')
-  const rangosLaborales = (horarios || []).filter(h =>
-    h.disponible &&
-    h.tipo !== 'salida' &&
-    h.tipo !== 'otro'
-  );
-
-  // 2. Generar todos los slots posibles de 30 minutos a partir de los rangos laborales
-  let todosLosSlots = [];
-  rangosLaborales.forEach(r => {
-    const slotsDeRango = generarSlots30Min(r.hora_inicio, r.hora_fin, duracionServicioMinutos);
-    todosLosSlots = todosLosSlots.concat(slotsDeRango);
-  });
-
-  // Eliminar duplicados si los hubiera
-  const slotsUnicos = [];
-  const vistas = new Set();
-  todosLosSlots.forEach(s => {
-    const key = `${s.inicio}-${s.fin}`;
-    if (!vistas.has(key)) {
-      vistas.add(key);
-      slotsUnicos.push(s);
-    }
-  });
-
-  // 3. Obtener rangos de bloqueo (disponible = false, o tipo === 'salida' o tipo === 'otro')
-  const rangosBloqueo = (horarios || []).filter(h =>
-    !h.disponible ||
-    h.tipo === 'salida' ||
-    h.tipo === 'otro'
-  );
-
-  // 4. Obtener citas activas que bloquean (estado === Pendiente, Confirmada, Reprogramada)
-  const citasBloqueantes = (citas || []).filter(c => {
-    const estado = (c.estado_cita || '').toLowerCase();
-    return estado === 'pendiente' || estado === 'confirmada' || estado === 'reprogramada';
-  });
-
-  // 5. Filtrar slots que se solapen con bloqueos o citas
-  const slotsLibres = slotsUnicos.filter(slot => {
-    const slotStart = parseTimeToMinutes(slot.inicio);
-    const slotEnd = slotStart + duracionServicioMinutos;
-
-    // Verificar si se solapa con algún rango de bloqueo
-    const solapaConBloqueo = rangosBloqueo.some(b => {
-      const bStart = parseTimeToMinutes(b.hora_inicio);
-      const bEnd = parseTimeToMinutes(b.hora_fin);
-      return slotStart < bEnd && slotEnd > bStart;
-    });
-
-    if (solapaConBloqueo) return false;
-
-    // Verificar si se solapa con alguna cita activa
-    const solapaConCita = citasBloqueantes.some(c => {
-      const blockStart = parseTimeToMinutes(c.hora_inicio);
-      const blockEnd = parseTimeToMinutes(c.hora_fin) + bufferMinutos;
-      return slotStart < blockEnd && slotEnd > blockStart;
-    });
-
-    if (solapaConCita) return false;
-
-    return true;
-  });
-
-  return slotsLibres.map(slot => ({
-    id: `slot-${slot.inicio}-${slot.fin}`,
-    inicio: slot.inicio,
-    fin: slot.fin,
-    hora_inicio: slot.inicio,
-    hora_fin: slot.fin
-  }));
-};
-
-const formatPhoneNumber = (val) => {
-  if (!val) return '';
-  const clean = String(val).replace(/\s+/g, '');
-  if (clean.length === 9) {
-    return `${clean.slice(0, 3)} ${clean.slice(3, 6)} ${clean.slice(6)}`;
-  }
-  return val;
-};
+// Helper functions are imported from '../utils/schedulerHelper' and '../utils/appointmentFormatters'
 
 const BookAppointment = () => {
   const navigate = useNavigate();
   const { loading: loadingProfile, perfilUsuario, perfilClinicoPropio, perfilesDependientes } = usePacienteActual();
+
+  // State for services blocked by existing pending citas
+  const [serviciosBloqueados, setServiciosBloqueados] = useState(new Set());
+
+  // Wizard state (indexed steps)
+  const [stepIndex, setStepIndex] = useState(0);
+  const [paraQuien, setParaQuien] = useState('yo'); // 'yo' o 'familiar'
+  const [familiarId, setFamiliarId] = useState('');
+  const [modalidad, setModalidad] = useState(''); // Starts empty
+  const [localSeleccionado, setLocalSeleccionado] = useState(null);
 
   // Unified preloaded database data state
   const [dbData, setDbData] = useState({
@@ -141,6 +57,11 @@ const BookAppointment = () => {
     psicologoServicio: [],
     horarios: [],
     citas: [],
+    reglasPrecios: [],
+    asignaciones: [],
+    areas: [],
+    cargos: [],
+    paquetesCatalogo: [],
     loading: true,
     error: null
   });
@@ -150,6 +71,9 @@ const BookAppointment = () => {
     const loadAllDbData = async () => {
       try {
         const todayStr = new Date().toISOString().split('T')[0];
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = tomorrow.toISOString().split('T')[0];
 
         const [
           { data: localesData, error: errLocales },
@@ -158,15 +82,25 @@ const BookAppointment = () => {
           { data: employeesData, error: errEmployees },
           { data: psServData, error: errPsServ },
           { data: horariosData, error: errHorarios },
-          { data: citasData, error: errCitas }
+          { data: citasData, error: errCitas },
+          { data: reglasPreciosData, error: errReglasPrecios },
+          { data: asignacionesData, error: errAsignaciones },
+          { data: areasData, error: errAreas },
+          { data: cargosData, error: errCargos },
+          { data: paquetesCatalogoData, error: errPaquetesCatalogo }
         ] = await Promise.all([
           supabase.from('locales').select('*').eq('activo', true),
           supabase.from('servicios').select('*').eq('activo', true),
           supabase.from('habitaciones').select('*').eq('activo', true),
           supabase.from('empleados').select('*').eq('activo', true),
           supabase.from('psicologo_servicio').select('*'),
-          supabase.from('horarios_empleados').select('*').gte('fecha', todayStr),
-          supabase.from('citas').select('id, fecha_cita, hora_inicio, hora_fin, estado_cita, psicologo_id, habitacion_id, modalidad').gte('fecha_cita', todayStr).in('estado_cita', ['Pendiente', 'Confirmada', 'Reprogramada'])
+          supabase.from('horarios_empleados').select('*').gte('fecha', tomorrowStr),
+          supabase.from('citas').select('id, fecha_cita, hora_inicio, hora_fin, estado_cita, psicologo_id, habitacion_id, modalidad').gte('fecha_cita', tomorrowStr).in('estado_cita', ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta']),
+          supabase.from('reglas_precios').select('*'),
+          supabase.from('asignaciones_empleado').select('*'),
+          supabase.from('areas').select('*').eq('activo', true),
+          supabase.from('cargos').select('*'),
+          supabase.from('paquetes_catalogo').select('*').eq('activo', true)
         ]);
 
         if (errLocales) throw errLocales;
@@ -176,11 +110,40 @@ const BookAppointment = () => {
         if (errPsServ) throw errPsServ;
         if (errHorarios) throw errHorarios;
         if (errCitas) throw errCitas;
+        if (errReglasPrecios) throw errReglasPrecios;
+        if (errAsignaciones) throw errAsignaciones;
+        if (errAreas) throw errAreas;
+        if (errCargos) throw errCargos;
+        if (errPaquetesCatalogo) throw errPaquetesCatalogo;
 
-        const mappedEmployees = (employeesData || []).map(emp => ({
-          ...emp,
-          nombres_apellidos: `${emp.nombres || ''} ${emp.apellido_paterno || ''} ${emp.apellido_materno || ''}`.trim()
-        }));
+        const mappedEmployees = (employeesData || []).map(emp => {
+          let cargoId = emp.cargo_id || null;
+          if (!cargoId && asignacionesData) {
+            const empAsignaciones = asignacionesData.filter(a => a.empleado_id === emp.id);
+            const asigConCargo = empAsignaciones.find(a => a.cargo_id);
+            if (asigConCargo) {
+              cargoId = asigConCargo.cargo_id;
+            }
+          }
+          
+          let prefix = '';
+          if (cargoId && cargosData) {
+            const cargo = cargosData.find(c => c.id === cargoId);
+            if (cargo) {
+              const nombreCargo = cargo.nombre || '';
+              if (nombreCargo.includes('Doctor')) prefix = 'Dra. ';
+              else if (nombreCargo.includes('Magister')) prefix = 'Mg. ';
+              else if (nombreCargo.includes('Licenciado')) prefix = 'Lic. ';
+            }
+          }
+
+          const baseName = `${emp.nombres || ''} ${emp.apellido_paterno || ''} ${emp.apellido_materno || ''}`.trim();
+          return {
+            ...emp,
+            cargo_id: cargoId,
+            nombres_apellidos: prefix ? `${prefix}${baseName}` : baseName
+          };
+        });
 
         setDbData({
           locales: localesData || [],
@@ -190,6 +153,11 @@ const BookAppointment = () => {
           psicologoServicio: psServData || [],
           horarios: horariosData || [],
           citas: citasData || [],
+          reglasPrecios: reglasPreciosData || [],
+          asignaciones: asignacionesData || [],
+          areas: areasData || [],
+          cargos: cargosData || [],
+          paquetesCatalogo: paquetesCatalogoData || [],
           loading: false,
           error: null
         });
@@ -202,31 +170,58 @@ const BookAppointment = () => {
     loadAllDbData();
   }, []);
 
-  // Wizard state (indexed steps)
-  const [stepIndex, setStepIndex] = useState(0);
-  const [paraQuien, setParaQuien] = useState('yo'); // 'yo' o 'familiar'
-  const [familiarId, setFamiliarId] = useState('');
-  const [modalidad, setModalidad] = useState(''); // Starts empty
-  const [localSeleccionado, setLocalSeleccionado] = useState(null);
-  
+  // Load blocked services (pending citas for current patient per service)
+  useEffect(() => {
+    const checkBloqueos = async () => {
+      const pacienteId = paraQuien === 'yo' ? perfilClinicoPropio?.id_paciente : familiarId;
+      if (!pacienteId || dbData.loading || loadingProfile) {
+        setServiciosBloqueados(new Set());
+        return;
+      }
+      const { data, error } = await supabase
+        .from('citas')
+        .select('servicio')
+        .eq('paciente_id', pacienteId)
+        .or('estado_cita.eq.Pendiente,estado_pago.eq.Pendiente');
+      if (!error && data) {
+        setServiciosBloqueados(new Set(data.map(c => c.servicio)));
+      }
+    };
+    checkBloqueos();
+  }, [paraQuien, familiarId, perfilClinicoPropio?.id_paciente, dbData.loading]);
+
   // Search query for services
   const [buscarServicio, setBuscarServicio] = useState('');
   const [servicioSeleccionado, setServicioSeleccionado] = useState(null);
   
   const [tipoSesion, setTipoSesion] = useState('normal'); // 'normal' o 'paquete'
   const [paqueteSeleccionado, setPaqueteSeleccionado] = useState(null);
-  const [paquetes, setPaquetes] = useState([]);
-  const [paquetesAdquiridos, setPaquetesAdquiridos] = useState([]);
+  const [activePatientPackages, setActivePatientPackages] = useState([]);
 
   const [psicologaSeleccionada, setPsicologaSeleccionada] = useState(null);
+
+
+
+  // Search mode state variables
+  const [modoBusqueda, setModoBusqueda] = useState('servicio'); // 'servicio' o 'especialista'
+  const [servicioExpandidoId, setServicioExpandidoId] = useState(null);
   
   const [fechasHabilitadas, setFechasHabilitadas] = useState(new Set());
   const [fechaSeleccionada, setFechaSeleccionada] = useState(null);
   const [slotsDisponibles, setSlotsDisponibles] = useState([]);
   const [slotSeleccionado, setSlotSeleccionado] = useState(null);
   const [calendarMonth, setCalendarMonth] = useState(() => {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1);
+    const now = new Date();
+    const d = new Date(now.getFullYear(), now.getMonth(), 1);
+    // Si hoy está en el mes actual, avanzar para que el mínimo sea mañana
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    if (tomorrow.getMonth() !== d.getMonth() || tomorrow.getFullYear() !== d.getFullYear()) {
+      // Si mañana es otro mes, mostrar el mes de mañana
+      return new Date(tomorrow.getFullYear(), tomorrow.getMonth(), 1);
+    }
+    return d;
   });
 
   const [comentario, setComentario] = useState('');
@@ -243,23 +238,22 @@ const BookAppointment = () => {
   const [paymentModalRedirectOnClose, setPaymentModalRedirectOnClose] = useState(false);
   const [copiedField, setCopiedField] = useState(null);
 
+  // Cupón / Convenio state
+  const [couponCode, setCouponCode] = useState('');
+  const [couponData, setCouponData] = useState(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState('');
+  const [couponSuccess, setCouponSuccess] = useState('');
+
   // Dynamic steps declaration based on modality
   const steps = useMemo(() => {
-    const list = [
-      { id: 'paciente', label: 'Paciente' },
-      { id: 'modalidad', label: 'Modalidad' }
-    ];
-    if (modalidad !== 'Virtual') {
-      list.push({ id: 'local', label: 'Local' });
-    }
-    list.push(
-      { id: 'servicio_tipo', label: 'Servicio y Tipo' },
-      { id: 'especialista', label: 'Especialista' },
+    return [
+      { id: 'paciente_modalidad_local', label: 'Paciente' },
+      { id: 'servicio_psicologo', label: 'Servicios' },
       { id: 'horario', label: 'Fecha y Horario' },
       { id: 'pago', label: 'Pago' }
-    );
-    return list;
-  }, [modalidad]);
+    ];
+  }, []);
 
   // Load payment methods on mount
   useEffect(() => {
@@ -278,23 +272,12 @@ const BookAppointment = () => {
   }, []);
 
   // Fetch catalog packages when service changes
+  // Fetch active patient prepaid packages once on patient change
   useEffect(() => {
-    if (servicioSeleccionado) {
-      obtenerPaquetes(servicioSeleccionado.id).then(res => {
-        if (res.success) setPaquetes(res.data || []);
-        else setPaquetes([]);
-      });
-    } else {
-      setPaquetes([]);
-    }
-  }, [servicioSeleccionado]);
-
-  // Fetch prepaid acquired packages
-  useEffect(() => {
-    const cargarPaquetesAdquiridos = async () => {
+    const cargarPaquetesPaciente = async () => {
       const pacienteId = paraQuien === 'yo' ? perfilClinicoPropio?.id_paciente : familiarId;
-      if (!pacienteId || !servicioSeleccionado) {
-        setPaquetesAdquiridos([]);
+      if (!pacienteId) {
+        setActivePatientPackages([]);
         return;
       }
       try {
@@ -302,13 +285,11 @@ const BookAppointment = () => {
           .from('paquetes_adquiridos')
           .select('*')
           .eq('paciente_id', pacienteId)
-          .eq('servicio_id', servicioSeleccionado.id)
           .gt('sesiones_disponibles', 0);
 
         if (packsErr) throw packsErr;
-
         if (!packs || packs.length === 0) {
-          setPaquetesAdquiridos([]);
+          setActivePatientPackages([]);
           return;
         }
 
@@ -320,7 +301,6 @@ const BookAppointment = () => {
             .in('estado_cita', ['Pendiente', 'Confirmada', 'Reprogramada']);
 
           if (countErr) throw countErr;
-
           const netas = p.sesiones_disponibles - (count || 0);
           return {
             ...p,
@@ -329,36 +309,70 @@ const BookAppointment = () => {
           };
         }));
 
-        setPaquetesAdquiridos(packsWithNet.filter(p => p.sesiones_netas > 0));
+        setActivePatientPackages(packsWithNet.filter(p => p.sesiones_netas > 0));
       } catch (err) {
-        console.error('Error al cargar paquetes adquiridos:', err);
-        setPaquetesAdquiridos([]);
+        console.error('Error al cargar paquetes del paciente:', err);
+        setActivePatientPackages([]);
       }
     };
 
-    cargarPaquetesAdquiridos();
-  }, [servicioSeleccionado, paraQuien, familiarId, perfilClinicoPropio]);
-
-  // Helper date format
-  const formatDateStr = (year, month, day) => {
-    const mm = String(month + 1).padStart(2, '0');
-    const dd = String(day).padStart(2, '0');
-    return `${year}-${mm}-${dd}`;
-  };
-
-  // Profile incomplete validations
-  const isProfileIncomplete = (profile) => {
-    if (!profile) return true;
-    if (!profile.genero || !profile.direccion || !profile.pais) return true;
-    if (profile.pais === 'Perú') {
-      if (!profile.departamento || !profile.provincia || !profile.distrito) return true;
-    }
-    return false;
-  };
+    cargarPaquetesPaciente();
+  }, [paraQuien, familiarId, perfilClinicoPropio]);
 
   const esClinicoIncompletoYo = isProfileIncomplete(perfilClinicoPropio);
   const selectedDependent = perfilesDependientes?.find(d => d.id_paciente === familiarId);
   const esClinicoIncompletoFamiliar = familiarId ? isProfileIncomplete(selectedDependent) : false;
+
+  // Final price memo using pricingHelper utility
+  const precioFinalCalculado = useMemo(() => {
+    if (!servicioSeleccionado) return 0;
+    
+    // Si es un paquete ya adquirido, el precio de programar la sesión es S/ 0
+    if (paqueteSeleccionado?.type === 'adquirido') {
+      return 0;
+    }
+    
+    const res = obtenerPrecioAplicable({
+      servicio: servicioSeleccionado,
+      paqueteCatalogo: paqueteSeleccionado?.type === 'catalogo' ? paqueteSeleccionado : null,
+      especialista: psicologaSeleccionada,
+      reglasPrecios: dbData.reglasPrecios,
+      localId: localSeleccionado?.id || null,
+      modalidad: modalidad,
+      asignaciones: dbData.asignaciones,
+      cargos: dbData.cargos
+    });
+    
+    return res.precioFinal;
+  }, [
+    servicioSeleccionado,
+    paqueteSeleccionado,
+    psicologaSeleccionada,
+    localSeleccionado,
+    modalidad,
+    dbData.reglasPrecios,
+    dbData.asignaciones,
+    dbData.cargos
+  ]);
+
+  const precioConDescuento = useMemo(() => {
+    if (!couponData) return precioFinalCalculado;
+    if (couponData.tipo_descuento === 'Porcentaje') {
+      return Math.round(precioFinalCalculado * (1 - couponData.valor_descuento / 100));
+    }
+    if (couponData.tipo_descuento === 'Monto') {
+      return Math.max(0, precioFinalCalculado - couponData.valor_descuento);
+    }
+    return precioFinalCalculado;
+  }, [precioFinalCalculado, couponData]);
+
+  const displayMontoEstimado = useMemo(() => {
+    if (!servicioSeleccionado) return '-';
+    if (paqueteSeleccionado?.type === 'adquirido') {
+      return 'S/ 0 (Prepago)';
+    }
+    return `S/ ${precioFinalCalculado}`;
+  }, [servicioSeleccionado, paqueteSeleccionado, precioFinalCalculado]);
 
   // Active local selection memo
   const activeLocal = useMemo(() => {
@@ -369,23 +383,29 @@ const BookAppointment = () => {
   // AVAILABILITY SOLVERS (COMPLETELY LOCAL/SYNCHRONOUS)
   // ----------------------------------------------------
 
+  const filtrarSlotsPorLocal = (slots, fecha, localRooms, duracion) => {
+    if (!localRooms || localRooms.length === 0) return slots;
+    const allCitasDelDia = dbData.citas.filter(c => c.fecha_cita === fecha);
+    return filtrarSlotsPorCapacidadLocal(slots, allCitasDelDia, localRooms, duracion);
+  };
+
   // 1. Check if a local has real availability for presencial modality
   const checkLocalAvailability = (localId) => {
-    const services = dbData.servicios.filter(s => 
-      s.local_id === localId || (Array.isArray(s.locales_ids) && s.locales_ids.includes(localId))
-    );
-    if (services.length === 0) return false;
+      const services = (dbData.servicios || []).filter(s => 
+        s && (s.local_id === localId || (Array.isArray(s.locales_ids) && s.locales_ids.includes(localId)))
+      );
+      if (services.length === 0) return false;
 
-    const serviceIds = services.map(s => s.id);
-    const specialistIds = dbData.psicologoServicio
-      .filter(ps => serviceIds.includes(ps.servicio_id))
-      .map(ps => ps.psicologo_id);
+      const serviceIds = services.map(s => s?.id);
+      const specialistIds = (dbData.psicologoServicio || [])
+        .filter(ps => ps && serviceIds.includes(ps?.servicio_id))
+        .map(ps => ps?.psicologo_id);
     
-    const activeSpecialists = dbData.employees.filter(e => e.activo && specialistIds.includes(e.id));
+    const activeSpecialists = (dbData.employees || []).filter(e => e && e.activo && specialistIds.includes(e.id));
     if (activeSpecialists.length === 0) return false;
 
-    const schedules = dbData.horarios.filter(h => 
-      h.modalidad === 'Presencial' && 
+    const schedules = (dbData.horarios || []).filter(h => 
+      h && h.modalidad === 'Presencial' && 
       h.local_id === localId && 
       specialistIds.includes(h.empleado_id) &&
       h.disponible &&
@@ -394,7 +414,7 @@ const BookAppointment = () => {
     );
     if (schedules.length === 0) return false;
 
-    const localRooms = dbData.rooms.filter(r => r.local_id === localId && r.activo);
+    const localRooms = (dbData.rooms || []).filter(r => r && r.local_id === localId && r.activo);
     if (localRooms.length === 0) return false;
 
     const groups = {};
@@ -407,27 +427,12 @@ const BookAppointment = () => {
     for (const key in groups) {
       const [fecha, empleadoId] = key.split('-');
       const schedulesDelDia = groups[key];
-      const citasDelDia = dbData.citas.filter(c => c.fecha_cita === fecha && c.psicologo_id === empleadoId);
+      const citasDelDia = (dbData.citas || []).filter(c => c && c.fecha_cita === fecha && c.psicologo_id === empleadoId);
       
-      const minDuration = Math.min(...services.map(s => s.duracion_minutos || s.duracion || 60));
+      const minDuration = Math.min(...services.map(s => s?.duracion_minutos || s?.duracion || 60));
       
       let slots = obtenerSlotsLibresDia(schedulesDelDia, citasDelDia, minDuration, BUFFER_MINUTOS);
-      
-      const allCitasDelDia = dbData.citas.filter(c => c.fecha_cita === fecha);
-      slots = slots.filter(slot => {
-        const slotStart = parseTimeToMinutes(slot.inicio);
-        const slotEnd = slotStart + minDuration;
-
-        return localRooms.some(room => {
-          const isOccupied = allCitasDelDia.some(c => {
-            if (c.habitacion_id !== room.id) return false;
-            const cStart = parseTimeToMinutes(c.hora_inicio);
-            const cEnd = parseTimeToMinutes(c.hora_fin);
-            return slotStart < cEnd && slotEnd > cStart;
-          });
-          return !isOccupied;
-        });
-      });
+      slots = filtrarSlotsPorLocal(slots, fecha, localRooms, minDuration);
 
       if (slots.length > 0) return true;
     }
@@ -437,7 +442,7 @@ const BookAppointment = () => {
 
   // 2. Check if a service has real availability
   const checkServiceAvailability = (service, currentModalidad, localId) => {
-    if (!currentModalidad) return false;
+    if (!service || !currentModalidad) return false;
     
     if (currentModalidad === 'Presencial') {
       if (!localId) return false;
@@ -445,15 +450,15 @@ const BookAppointment = () => {
       if (!isAssociated) return false;
     }
 
-    const specialistIds = dbData.psicologoServicio
-      .filter(ps => ps.servicio_id === service.id)
-      .map(ps => ps.psicologo_id);
+    const specialistIds = (dbData.psicologoServicio || [])
+      .filter(ps => ps && ps.servicio_id === service.id)
+      .map(ps => ps?.psicologo_id);
     
-    const activeSpecialists = dbData.employees.filter(e => e.activo && specialistIds.includes(e.id));
+    const activeSpecialists = (dbData.employees || []).filter(e => e && e.activo && specialistIds.includes(e.id));
     if (activeSpecialists.length === 0) return false;
 
-    const schedules = dbData.horarios.filter(h => 
-      h.modalidad === currentModalidad && 
+    const schedules = (dbData.horarios || []).filter(h => 
+      h && h.modalidad === currentModalidad && 
       (currentModalidad === 'Virtual' || h.local_id === localId) &&
       specialistIds.includes(h.empleado_id) &&
       h.disponible &&
@@ -464,7 +469,7 @@ const BookAppointment = () => {
 
     let localRooms = [];
     if (currentModalidad === 'Presencial') {
-      localRooms = dbData.rooms.filter(r => r.local_id === localId && r.activo);
+      localRooms = (dbData.rooms || []).filter(r => r && r.local_id === localId && r.activo);
       if (localRooms.length === 0) return false;
     }
 
@@ -480,26 +485,12 @@ const BookAppointment = () => {
     for (const key in groups) {
       const [fecha, empleadoId] = key.split('-');
       const schedulesDelDia = groups[key];
-      const citasDelDia = dbData.citas.filter(c => c.fecha_cita === fecha && c.psicologo_id === empleadoId);
+      const citasDelDia = (dbData.citas || []).filter(c => c && c.fecha_cita === fecha && c.psicologo_id === empleadoId);
       
       let slots = obtenerSlotsLibresDia(schedulesDelDia, citasDelDia, duration, BUFFER_MINUTOS);
       
       if (currentModalidad === 'Presencial') {
-        const allCitasDelDia = dbData.citas.filter(c => c.fecha_cita === fecha);
-        slots = slots.filter(slot => {
-          const slotStart = parseTimeToMinutes(slot.inicio);
-          const slotEnd = slotStart + duration;
-
-          return localRooms.some(room => {
-            const isOccupied = allCitasDelDia.some(c => {
-              if (c.habitacion_id !== room.id) return false;
-              const cStart = parseTimeToMinutes(c.hora_inicio);
-              const cEnd = parseTimeToMinutes(c.hora_fin);
-              return slotStart < cEnd && slotEnd > cStart;
-            });
-            return !isOccupied;
-          });
-        });
+        slots = filtrarSlotsPorLocal(slots, fecha, localRooms, duration);
       }
 
       if (slots.length > 0) return true;
@@ -510,13 +501,13 @@ const BookAppointment = () => {
 
   // 3. Check if a specialist has real availability
   const checkSpecialistAvailability = (specialist, service, currentModalidad, localId) => {
-    if (!service || !currentModalidad) return false;
+    if (!specialist || !service || !currentModalidad) return false;
     
-    const isAssigned = dbData.psicologoServicio.some(ps => ps.psicologo_id === specialist.id && ps.servicio_id === service.id);
+    const isAssigned = (dbData.psicologoServicio || []).some(ps => ps && ps.psicologo_id === specialist.id && ps.servicio_id === service.id);
     if (!isAssigned) return false;
 
-    const schedules = dbData.horarios.filter(h => 
-      h.empleado_id === specialist.id &&
+    const schedules = (dbData.horarios || []).filter(h => 
+      h && h.empleado_id === specialist.id &&
       h.modalidad === currentModalidad && 
       (currentModalidad === 'Virtual' || h.local_id === localId) &&
       h.disponible &&
@@ -527,7 +518,7 @@ const BookAppointment = () => {
 
     let localRooms = [];
     if (currentModalidad === 'Presencial') {
-      localRooms = dbData.rooms.filter(r => r.local_id === localId && r.activo);
+      localRooms = (dbData.rooms || []).filter(r => r && r.local_id === localId && r.activo);
       if (localRooms.length === 0) return false;
     }
 
@@ -542,26 +533,12 @@ const BookAppointment = () => {
 
     for (const fecha in groups) {
       const schedulesDelDia = groups[fecha];
-      const citasDelDia = dbData.citas.filter(c => c.fecha_cita === fecha && c.psicologo_id === specialist.id);
+      const citasDelDia = (dbData.citas || []).filter(c => c && c.fecha_cita === fecha && c.psicologo_id === specialist.id);
       
       let slots = obtenerSlotsLibresDia(schedulesDelDia, citasDelDia, duration, BUFFER_MINUTOS);
       
       if (currentModalidad === 'Presencial') {
-        const allCitasDelDia = dbData.citas.filter(c => c.fecha_cita === fecha);
-        slots = slots.filter(slot => {
-          const slotStart = parseTimeToMinutes(slot.inicio);
-          const slotEnd = slotStart + duration;
-
-          return localRooms.some(room => {
-            const isOccupied = allCitasDelDia.some(c => {
-              if (c.habitacion_id !== room.id) return false;
-              const cStart = parseTimeToMinutes(c.hora_inicio);
-              const cEnd = parseTimeToMinutes(c.hora_fin);
-              return slotStart < cEnd && slotEnd > cStart;
-            });
-            return !isOccupied;
-          });
-        });
+        slots = filtrarSlotsPorLocal(slots, fecha, localRooms, duration);
       }
 
       if (slots.length > 0) return true;
@@ -572,11 +549,11 @@ const BookAppointment = () => {
 
   // 4. Calculate earliest available date for specialist
   const calcularFechaMasProxima = (psicologoId, currentModalidad, localId) => {
-    if (!servicioSeleccionado || !currentModalidad) return null;
-    const duration = servicioSeleccionado.duracion_minutos || servicioSeleccionado.duracion || 60;
+    if (!currentModalidad) return null;
+    const duration = (servicioSeleccionado?.duracion_minutos || servicioSeleccionado?.duracion || 60);
     
-    const schedules = dbData.horarios.filter(h => 
-      h.empleado_id === psicologoId &&
+    const schedules = (dbData.horarios || []).filter(h => 
+      h && h.empleado_id === psicologoId &&
       h.modalidad === currentModalidad && 
       (currentModalidad === 'Virtual' || h.local_id === localId) &&
       h.disponible &&
@@ -587,7 +564,7 @@ const BookAppointment = () => {
 
     let localRooms = [];
     if (currentModalidad === 'Presencial' && localId) {
-      localRooms = dbData.rooms.filter(r => r.local_id === localId && r.activo);
+      localRooms = (dbData.rooms || []).filter(r => r && r.local_id === localId && r.activo);
       if (localRooms.length === 0) return null;
     }
 
@@ -595,26 +572,12 @@ const BookAppointment = () => {
 
     for (const fecha of uniqueFechas) {
       const schedulesDelDia = schedules.filter(h => h.fecha === fecha);
-      const citasDelDia = dbData.citas.filter(c => c.fecha_cita === fecha && c.psicologo_id === psicologoId);
+      const citasDelDia = (dbData.citas || []).filter(c => c && c.fecha_cita === fecha && c.psicologo_id === psicologoId);
       
       let slots = obtenerSlotsLibresDia(schedulesDelDia, citasDelDia, duration, BUFFER_MINUTOS);
       
       if (currentModalidad === 'Presencial') {
-        const allCitasDelDia = dbData.citas.filter(c => c.fecha_cita === fecha);
-        slots = slots.filter(slot => {
-          const slotStart = parseTimeToMinutes(slot.inicio);
-          const slotEnd = slotStart + duration;
-
-          return localRooms.some(room => {
-            const isOccupied = allCitasDelDia.some(c => {
-              if (c.habitacion_id !== room.id) return false;
-              const cStart = parseTimeToMinutes(c.hora_inicio);
-              const cEnd = parseTimeToMinutes(c.hora_fin);
-              return slotStart < cEnd && slotEnd > cStart;
-            });
-            return !isOccupied;
-          });
-        });
+        slots = filtrarSlotsPorLocal(slots, fecha, localRooms, duration);
       }
 
       if (slots.length > 0) return fecha;
@@ -628,8 +591,8 @@ const BookAppointment = () => {
     if (!servicioSeleccionado || !currentModalidad) return new Set();
     const duration = servicioSeleccionado.duracion_minutos || servicioSeleccionado.duracion || 60;
     
-    const schedules = dbData.horarios.filter(h => 
-      h.empleado_id === psicologoId &&
+    const schedules = (dbData.horarios || []).filter(h => 
+      h && h.empleado_id === psicologoId &&
       h.modalidad === currentModalidad && 
       (currentModalidad === 'Virtual' || h.local_id === localId) &&
       h.disponible &&
@@ -639,7 +602,7 @@ const BookAppointment = () => {
 
     let localRooms = [];
     if (currentModalidad === 'Presencial' && localId) {
-      localRooms = dbData.rooms.filter(r => r.local_id === localId && r.activo);
+      localRooms = (dbData.rooms || []).filter(r => r && r.local_id === localId && r.activo);
     }
 
     const habilitadas = new Set();
@@ -647,26 +610,12 @@ const BookAppointment = () => {
 
     for (const fecha of uniqueFechas) {
       const schedulesDelDia = schedules.filter(h => h.fecha === fecha);
-      const citasDelDia = dbData.citas.filter(c => c.fecha_cita === fecha && c.psicologo_id === psicologoId);
+      const citasDelDia = (dbData.citas || []).filter(c => c && c.fecha_cita === fecha && c.psicologo_id === psicologoId);
       
       let slots = obtenerSlotsLibresDia(schedulesDelDia, citasDelDia, duration, BUFFER_MINUTOS);
       
       if (currentModalidad === 'Presencial' && localRooms.length > 0) {
-        const allCitasDelDia = dbData.citas.filter(c => c.fecha_cita === fecha);
-        slots = slots.filter(slot => {
-          const slotStart = parseTimeToMinutes(slot.inicio);
-          const slotEnd = slotStart + duration;
-
-          return localRooms.some(room => {
-            const isOccupied = allCitasDelDia.some(c => {
-              if (c.habitacion_id !== room.id) return false;
-              const cStart = parseTimeToMinutes(c.hora_inicio);
-              const cEnd = parseTimeToMinutes(c.hora_fin);
-              return slotStart < cEnd && slotEnd > cStart;
-            });
-            return !isOccupied;
-          });
-        });
+        slots = filtrarSlotsPorLocal(slots, fecha, localRooms, duration);
       }
 
       if (slots.length > 0) {
@@ -681,8 +630,8 @@ const BookAppointment = () => {
     if (!servicioSeleccionado || !currentModalidad) return [];
     const duration = servicioSeleccionado.duracion_minutos || servicioSeleccionado.duracion || 60;
     
-    const schedules = dbData.horarios.filter(h => 
-      h.empleado_id === psicologoId &&
+    const schedules = (dbData.horarios || []).filter(h => 
+      h && h.empleado_id === psicologoId &&
       h.modalidad === currentModalidad && 
       h.fecha === fechaStr &&
       (currentModalidad === 'Virtual' || h.local_id === localId) &&
@@ -691,31 +640,17 @@ const BookAppointment = () => {
       h.tipo !== 'otro'
     );
 
-    const citasDelDia = dbData.citas.filter(c => 
-      c.fecha_cita === fechaStr && 
+    const citasDelDia = (dbData.citas || []).filter(c => 
+      c && c.fecha_cita === fechaStr && 
       c.psicologo_id === psicologoId
     );
 
     let slots = obtenerSlotsLibresDia(schedules, citasDelDia, duration, BUFFER_MINUTOS);
 
     if (currentModalidad === 'Presencial' && localId) {
-      const localRooms = dbData.rooms.filter(r => r.local_id === localId && r.activo);
+      const localRooms = (dbData.rooms || []).filter(r => r && r.local_id === localId && r.activo);
       if (localRooms.length > 0) {
-        const allCitasDelDia = dbData.citas.filter(c => c.fecha_cita === fechaStr);
-        slots = slots.filter(slot => {
-          const slotStart = parseTimeToMinutes(slot.inicio);
-          const slotEnd = slotStart + duration;
-
-          return localRooms.some(room => {
-            const isOccupied = allCitasDelDia.some(c => {
-              if (c.habitacion_id !== room.id) return false;
-              const cStart = parseTimeToMinutes(c.hora_inicio);
-              const cEnd = parseTimeToMinutes(c.hora_fin);
-              return slotStart < cEnd && slotEnd > cStart;
-            });
-            return !isOccupied;
-          });
-        });
+        slots = filtrarSlotsPorLocal(slots, fechaStr, localRooms, duration);
       }
     }
 
@@ -725,9 +660,9 @@ const BookAppointment = () => {
   // 7. Check if a modality has real availability (Cascading solver)
   const checkModalityAvailability = (mod) => {
     if (mod === 'Presencial') {
-      return dbData.locales.some(l => checkLocalAvailability(l.id));
+      return (dbData.locales || []).some(l => l && checkLocalAvailability(l.id));
     } else if (mod === 'Virtual') {
-      return dbData.servicios.some(s => checkServiceAvailability(s, 'Virtual', null));
+      return (dbData.servicios || []).some(s => s && checkServiceAvailability(s, 'Virtual', null));
     }
     return false;
   };
@@ -736,15 +671,49 @@ const BookAppointment = () => {
   // FILTERING LOGIC
   // ----------------------------------------------------
 
+  // Filter specialists strictly according to system rules:
+  // 1. System role is 'Psicóloga'
+  // 2. Has services assigned to their profile
+  // 3. Active and offers services on the platform
+  const especialistasElegibles = useMemo(() => {
+    return dbData.employees.filter(emp => {
+      if (!emp) return false;
+      const rol = (emp.rol_sistema || '').toLowerCase();
+      const esPsicologa = rol.includes('psicólog') || rol.includes('psicolog');
+      if (!esPsicologa) return false;
+
+      const tieneServicios = (dbData.psicologoServicio || []).some(ps =>
+        ps && ps.psicologo_id === emp.id &&
+        (dbData.servicios || []).some(s => s && s.id === ps.servicio_id && s.activo)
+      );
+      if (!tieneServicios) return false;
+
+      const estaActiva = emp.activo && emp.ofrece_servicios !== false;
+      if (!estaActiva) return false;
+
+      return true;
+    });
+  }, [dbData.employees, dbData.psicologoServicio, dbData.servicios]);
+
+  // Helper to map specialty area name for a specialist
+  const getEspecialidadEspecialista = (empId) => {
+    const empAsignaciones = (dbData.asignaciones || []).filter(a => a && a.empleado_id === empId);
+    const areaNames = empAsignaciones.map(a => {
+      const area = (dbData.areas || []).find(ar => ar && ar.id === a.area_id);
+      return area ? area.nombre : null;
+    }).filter(Boolean);
+    return areaNames.length > 0 ? areaNames.join(', ') : 'Psicología General';
+  };
+
   // Valid locals passing checkLocalAvailability
   const validLocales = useMemo(() => {
-    return dbData.locales.filter(l => checkLocalAvailability(l.id));
+    return (dbData.locales || []).filter(l => l && checkLocalAvailability(l.id));
   }, [dbData.locales, dbData.horarios, dbData.citas, dbData.rooms, dbData.servicios, dbData.employees, dbData.psicologoServicio]);
 
   // Set default local if none selected or no longer valid
   useEffect(() => {
     if (modalidad === 'Presencial' && validLocales.length > 0) {
-      if (!localSeleccionado || !validLocales.some(l => l.id === localSeleccionado.id)) {
+      if (!localSeleccionado || !validLocales.some(l => l && l.id === localSeleccionado?.id)) {
         setLocalSeleccionado(validLocales[0]);
       }
     } else if (modalidad === 'Virtual') {
@@ -752,37 +721,107 @@ const BookAppointment = () => {
     }
   }, [modalidad, validLocales, localSeleccionado]);
 
-  // Filter services dynamically by modality, local, search input, and availability
+  // Helper: true if service has any valid pricing (base, reglas_precios, or packages)
+  const serviceHasPricing = (s) => {
+    if (Number(s.precio_sesion || 0) > 0) return true;
+    if ((dbData.reglasPrecios || []).some(r => r.servicio_id === s.id && (Number(r.precio || 0) > 0 || Number(r.descuento_porcentaje || 0) > 0))) return true;
+    if ((dbData.paquetesCatalogo || []).some(p => p.servicio_id === s.id && Number(p.precio_total || 0) > 0)) return true;
+    return false;
+  };
+
+  // Helper: rank academic hierarchy for specialist sorting
+  const getJerarquia = (nombre) => {
+    if (!nombre) return 4;
+    if (nombre.startsWith('Dra.') || nombre.startsWith('Dr.')) return 1;
+    if (nombre.startsWith('Mg.')) return 2;
+    if (nombre.startsWith('Lic.')) return 3;
+    return 4;
+  };
+
+  // Filter services dynamically based on modoBusqueda
   const serviciosFiltrados = useMemo(() => {
-    return dbData.servicios.filter(s => {
-      if (buscarServicio.trim() !== '') {
-        const query = buscarServicio.toLowerCase();
-        if (!s.nombre_servicio.toLowerCase().includes(query) && !(s.descripcion || '').toLowerCase().includes(query)) {
-          return false;
+    if (modoBusqueda === 'servicio') {
+      return dbData.servicios.filter(s => {
+        if (!s) return false;
+        if (!serviceHasPricing(s)) return false;
+        if (buscarServicio.trim() !== '') {
+          const query = buscarServicio.toLowerCase();
+          if (!(s.nombre_servicio || '').toLowerCase().includes(query)) {
+            return false;
+          }
         }
-      }
-      return checkServiceAvailability(s, modalidad, localSeleccionado?.id);
-    });
-  }, [dbData.servicios, modalidad, localSeleccionado, buscarServicio, dbData.horarios, dbData.citas, dbData.rooms, dbData.employees, dbData.psicologoServicio]);
+
+        const hasSpecialist = (especialistasElegibles || []).some(emp =>
+          emp && (dbData.psicologoServicio || []).some(ps => ps && ps.psicologo_id === emp.id && ps.servicio_id === s.id)
+        );
+        if (!hasSpecialist) return false;
+
+        return checkServiceAvailability(s, modalidad, localSeleccionado?.id);
+      }).sort((a, b) => (a.nombre_servicio || '').localeCompare(b.nombre_servicio || ''));
+    } else {
+      // Buscar por especialista: mostrar servicios de la especialista seleccionada
+      if (!psicologaSeleccionada) return [];
+      return dbData.servicios.filter(s => {
+        if (!s) return false;
+        if (!serviceHasPricing(s)) return false;
+        if (buscarServicio.trim() !== '') {
+          const query = buscarServicio.toLowerCase();
+          if (!(s.nombre_servicio || '').toLowerCase().includes(query)) return false;
+        }
+        const offersService = (dbData.psicologoServicio || []).some(ps =>
+          ps && ps.psicologo_id === psicologaSeleccionada.id && ps.servicio_id === s.id
+        );
+        if (!offersService) return false;
+        return checkSpecialistAvailability(psicologaSeleccionada, s, modalidad, localSeleccionado?.id);
+      }).sort((a, b) => (a.nombre_servicio || '').localeCompare(b.nombre_servicio || ''));
+    }
+  }, [modoBusqueda, dbData.servicios, dbData.reglasPrecios, dbData.paquetesCatalogo, psicologaSeleccionada, modalidad, localSeleccionado, buscarServicio, dbData.horarios, dbData.citas, dbData.rooms, dbData.employees, dbData.psicologoServicio, especialistasElegibles]);
 
   // Filter specialists
   const especialistasFiltrados = useMemo(() => {
-    if (!servicioSeleccionado) return [];
-    return dbData.employees.filter(emp => 
-      checkSpecialistAvailability(emp, servicioSeleccionado, modalidad, localSeleccionado?.id)
-    );
-  }, [dbData.employees, servicioSeleccionado, modalidad, localSeleccionado, dbData.horarios, dbData.citas, dbData.rooms, dbData.psicologoServicio]);
+    if (modoBusqueda === 'servicio') {
+      if (!servicioSeleccionado) return [];
+      return especialistasElegibles.filter(emp => {
+        if (!emp) return false;
+        // 1. Debe estar asignada al servicio seleccionado
+        const offersService = (dbData.psicologoServicio || []).some(ps =>
+          ps && ps.psicologo_id === emp.id && ps.servicio_id === servicioSeleccionado.id
+        );
+        if (!offersService) return false;
+
+        // 2. Debe tener disponibilidad para la modalidad y local seleccionados
+        return checkSpecialistAvailability(emp, servicioSeleccionado, modalidad, localSeleccionado?.id);
+      });
+    } else {
+      // Buscar por especialista: mostrar especialistas disponibles para al menos uno de sus servicios
+      return especialistasElegibles.filter(emp => {
+        if (!emp) return false;
+        const empServiceIds = (dbData.psicologoServicio || [])
+          .filter(ps => ps && ps.psicologo_id === emp.id)
+          .map(ps => ps?.servicio_id);
+        
+        return (dbData.servicios || []).some(s => 
+          s && empServiceIds.includes(s.id) &&
+          checkSpecialistAvailability(emp, s, modalidad, localSeleccionado?.id)
+        );
+      });
+    }
+  }, [modoBusqueda, especialistasElegibles, servicioSeleccionado, modalidad, localSeleccionado, dbData.servicios, dbData.psicologoServicio, dbData.horarios, dbData.citas, dbData.rooms]);
 
   // Calculate dates proximas for filtered specialists
   const especialistasConFecha = useMemo(() => {
     return especialistasFiltrados.map(emp => {
+      if (!emp) return null;
       const fechaProx = calcularFechaMasProxima(emp.id, modalidad, localSeleccionado?.id);
-      return {
-        ...emp,
-        fechaProx
-      };
-    }).filter(emp => emp.fechaProx !== null);
-  }, [especialistasFiltrados, modalidad, localSeleccionado, dbData.horarios, dbData.citas, dbData.rooms, servicioSeleccionado]);
+      return { ...emp, fechaProx };
+    }).filter(emp => emp && emp.fechaProx !== null)
+    .sort((a, b) => {
+      const rankA = getJerarquia(a.nombres_apellidos);
+      const rankB = getJerarquia(b.nombres_apellidos);
+      if (rankA !== rankB) return rankA - rankB;
+      return (a.nombres_apellidos || '').localeCompare(b.nombres_apellidos || '');
+    });
+  }, [especialistasFiltrados, modalidad, localSeleccionado, dbData.horarios, dbData.citas, dbData.rooms, servicioSeleccionado, modoBusqueda]);
 
   // Filter modalities based on availability
   const isPresencialAvailable = useMemo(() => checkModalityAvailability('Presencial'), [dbData]);
@@ -805,6 +844,7 @@ const BookAppointment = () => {
     setSlotSeleccionado(null);
     setSlotsDisponibles([]);
     setFechasHabilitadas(new Set());
+    setServicioExpandidoId(null);
   };
 
   const handleModalidadChange = (nuevaMod) => {
@@ -820,6 +860,7 @@ const BookAppointment = () => {
     setSlotSeleccionado(null);
     setSlotsDisponibles([]);
     setFechasHabilitadas(new Set());
+    setServicioExpandidoId(null);
     
     if (nuevaMod === 'Virtual') {
       setMetodoPago('tarjeta');
@@ -840,46 +881,63 @@ const BookAppointment = () => {
     setSlotSeleccionado(null);
     setSlotsDisponibles([]);
     setFechasHabilitadas(new Set());
+    setServicioExpandidoId(null);
   };
 
-  const handleServicioChange = (nuevoServicio) => {
-    setServicioSeleccionado(nuevoServicio);
-    
-    // Resets:
-    setTipoSesion('normal');
-    setPaqueteSeleccionado(null);
-    setPsicologaSeleccionada(null);
-    setFechaSeleccionada(null);
-    setSlotSeleccionado(null);
-    setSlotsDisponibles([]);
-    setFechasHabilitadas(new Set());
+
+
+  const handleServiceHeaderClick = (service) => {
+    if (!service) return;
+    const estaBloqueado = serviciosBloqueados.has(service.nombre_servicio);
+    if (servicioExpandidoId === service.id) {
+      setServicioExpandidoId(null);
+      setServicioSeleccionado(null);
+      setTipoSesion('normal');
+      setPaqueteSeleccionado(null);
+      if (modoBusqueda === 'servicio') {
+        setPsicologaSeleccionada(null);
+      }
+      setFechaSeleccionada(null);
+      setSlotSeleccionado(null);
+    } else if (estaBloqueado) {
+      toast.error('Ya cuentas con una sesión pendiente para este servicio. Para agendar la siguiente sesión, debes concluir tu cita anterior.');
+    } else {
+      setServicioExpandidoId(service.id);
+      setServicioSeleccionado(service);
+      
+      const resolvedPrice = obtenerPrecioAplicable({
+        servicio: service,
+        paqueteCatalogo: null,
+        especialista: psicologaSeleccionada,
+        reglasPrecios: dbData.reglasPrecios,
+        localId: localSeleccionado?.id || null,
+        modalidad: modalidad,
+        asignaciones: dbData.asignaciones,
+        cargos: dbData.cargos
+      }).precioFinal;
+
+      setTipoSesion(resolvedPrice > 0 ? 'normal' : 'paquete');
+      setPaqueteSeleccionado(null);
+      if (psicologaSeleccionada) {
+        // In search by specialist, do not reset if already compatible. Otherwise reset specialist.
+        const isCompatible = (dbData.psicologoServicio || []).some(ps => 
+          ps.psicologo_id === psicologaSeleccionada.id && ps.servicio_id === service.id
+        );
+        if (!isCompatible) {
+          setPsicologaSeleccionada(null);
+          setFechaSeleccionada(null);
+          setSlotSeleccionado(null);
+        }
+      }
+    }
   };
 
-  const handleTipoSesionChange = (nuevoTipo) => {
-    setTipoSesion(nuevoTipo);
-    
-    // Resets:
-    setPaqueteSeleccionado(null);
-    setPsicologaSeleccionada(null);
-    setFechaSeleccionada(null);
-    setSlotSeleccionado(null);
-    setSlotsDisponibles([]);
-    setFechasHabilitadas(new Set());
-  };
 
-  const handlePaqueteChange = (nuevoPaquete) => {
-    setPaqueteSeleccionado(nuevoPaquete);
-    
-    // Resets:
-    setPsicologaSeleccionada(null);
-    setFechaSeleccionada(null);
-    setSlotSeleccionado(null);
-    setSlotsDisponibles([]);
-    setFechasHabilitadas(new Set());
-  };
 
   const handleEspecialistaChange = (nuevoEspecialista) => {
-    setPsicologaSeleccionada(nuevoEspecialista);
+    if (psicologaSeleccionada?.id === nuevoEspecialista?.id) return;
+    setPsicologaSeleccionada(nuevoEspecialista || null);
+    // NO cerrar el acordeón ni borrar el servicio seleccionado
     
     // Resets:
     setFechaSeleccionada(null);
@@ -890,22 +948,18 @@ const BookAppointment = () => {
 
   const puedesAvanzar = () => {
     const currentStepId = steps[stepIndex]?.id;
-    if (currentStepId === 'paciente') {
-      if (paraQuien === 'yo') return !esClinicoIncompletoYo;
-      return familiarId !== '' && !esClinicoIncompletoFamiliar;
+    if (currentStepId === 'paciente_modalidad_local') {
+      const pacienteValid = paraQuien === 'yo'
+        ? !esClinicoIncompletoYo
+        : (familiarId !== '' && !esClinicoIncompletoFamiliar);
+      if (!pacienteValid) return false;
+      if (modalidad === 'Virtual') return true;
+      if (modalidad === 'Presencial') return localSeleccionado !== null;
+      return false;
     }
-    if (currentStepId === 'modalidad') {
-      return modalidad === 'Presencial' || modalidad === 'Virtual';
-    }
-    if (currentStepId === 'local') {
-      return localSeleccionado !== null;
-    }
-    if (currentStepId === 'servicio_tipo') {
+    if (currentStepId === 'servicio_psicologo') {
       if (!servicioSeleccionado) return false;
-      if (tipoSesion === 'normal') return true;
-      return paqueteSeleccionado !== null;
-    }
-    if (currentStepId === 'especialista') {
+      if (tipoSesion === 'paquete' && !paqueteSeleccionado) return false;
       return psicologaSeleccionada !== null;
     }
     if (currentStepId === 'horario') {
@@ -953,11 +1007,14 @@ const BookAppointment = () => {
   // ----------------------------------------------------
 
   const saveAppointment = async (estadoPago, metodoPagoVal) => {
+    if (dbData.loading || loadingProfile) {
+      return { success: false, error: 'Los datos aún se están cargando. Intenta de nuevo en un momento.' };
+    }
     setSavingAppointment(true);
     setBookingError('');
     try {
-      const pacienteId = paraQuien === 'yo' ? perfilClinicoPropio.id_paciente : familiarId;
-      const dateStr = formatDateStr(fechaSeleccionada.getFullYear(), fechaSeleccionada.getMonth(), fechaSeleccionada.getDate());
+      const pacienteId = paraQuien === 'yo' ? perfilClinicoPropio?.id_paciente : familiarId;
+      const dateStr = formatDateStr(fechaSeleccionada?.getFullYear(), fechaSeleccionada?.getMonth(), fechaSeleccionada?.getDate());
 
       let dbMetodoPago = metodoPagoVal;
       if (metodoPagoVal === 'Pago en clínica') {
@@ -1036,9 +1093,7 @@ const BookAppointment = () => {
         }
       }
 
-      const priceVal = paqueteSeleccionado
-        ? (paqueteSeleccionado.type === 'adquirido' ? 0 : paqueteSeleccionado.precio_total)
-        : servicioSeleccionado.precio_sesion;
+      const priceVal = couponData ? precioConDescuento : precioFinalCalculado;
 
       let dbHabitacionId = null;
       if (modalidad === 'Presencial' && activeLocal) {
@@ -1054,7 +1109,7 @@ const BookAppointment = () => {
             .from('citas')
             .select('hora_inicio, hora_fin, habitacion_id')
             .eq('fecha_cita', dateStr)
-            .in('estado_cita', ['Pendiente', 'Confirmada', 'Reprogramada']);
+            .in('estado_cita', ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta']);
 
           const duracion = servicioSeleccionado?.duracion_minutos || servicioSeleccionado?.duracion || 60;
           const slotStart = parseTimeToMinutes(slotSeleccionado.hora_inicio);
@@ -1079,7 +1134,6 @@ const BookAppointment = () => {
         psicologo_id: psicologaSeleccionada.id,
         psicologa_nombre: psicologaSeleccionada.nombres_apellidos,
         servicio: servicioSeleccionado.nombre_servicio,
-        numero_sesion: 1,
         fecha_cita: dateStr,
         hora_inicio: slotSeleccionado.hora_inicio,
         hora_fin: slotSeleccionado.hora_fin,
@@ -1107,7 +1161,7 @@ const BookAppointment = () => {
     if (paqueteSeleccionado?.type === 'adquirido') {
       const res = await saveAppointment('Pagado', paqueteSeleccionado.metodo_pago);
       if (res.success) {
-        alert('Cita agendada correctamente utilizando tu paquete.');
+        toast.success('Cita agendada correctamente utilizando tu paquete.', { duration: 4000 });
         navigate('/dashboard/appointments');
       } else {
         setBookingError(res.error || 'Error al guardar la cita.');
@@ -1123,7 +1177,7 @@ const BookAppointment = () => {
     } else {
       const res = await saveAppointment('Pendiente', 'Pago en clínica');
       if (res.success) {
-        alert('Cita agendada correctamente. Recuerda realizar el pago en recepción el día de tu consulta.');
+        toast.success('Cita agendada correctamente. Recuerda realizar el pago en recepción el día de tu consulta.', { duration: 5000 });
         navigate('/dashboard/appointments');
       } else {
         setBookingError(res.error || 'Error al guardar la cita.');
@@ -1135,16 +1189,14 @@ const BookAppointment = () => {
   // HELPERS AND CONTROLS
   // ----------------------------------------------------
 
-  const getPsicoFoto = (id) => {
-    if (id === 'a1f981b3-30fd-4ba8-80da-c32f4f5b1b51') return '/dr_valeria.png';
-    if (id === 'a1f981b3-30fd-4ba8-80da-c32f4f5b1b52') return '/mg_beatriz.png';
-    if (id === 'a1f981b3-30fd-4ba8-80da-c32f4f5b1b53') return '/lic_camila.png';
-    if (id === '0f7d4b9e-b74f-4d66-a052-4773fbb8c6ca') return '/Doctora Milagros Ordinola.jpeg';
-    if (id === '86bacf53-dd77-4899-bf11-f6f7b3cbf940') return '/Licenciada Karina.jpeg';
-    if (id === '17946652-05c2-4d7c-9d8b-37dd2147eba2') return '/Magister Williams.jpeg';
-    if (id === 'c4c6e1f8-a03b-457f-afb3-4546be2ec895') return '/Licenciada Jasmin Pillaca.jpeg';
-    return null;
+  const handleStepClick = (stepId) => {
+    const idx = steps.findIndex(s => s.id === stepId);
+    if (idx !== -1 && idx < stepIndex) {
+      setStepIndex(idx);
+    }
   };
+
+
 
   const cambiarMes = (incremento) => {
     const nueva = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
@@ -1168,6 +1220,109 @@ const BookAppointment = () => {
 
   const handleClosePaymentModal = () => {
     setShowPaymentModal(false);
+  };
+
+  const handleApplyCoupon = async () => {
+    setCouponError('');
+    setCouponSuccess('');
+    setCouponData(null);
+    if (!couponCode.trim()) {
+      setCouponError('Ingresa un código de cupón.');
+      return;
+    }
+    setCouponLoading(true);
+    try {
+      const codigo = couponCode.trim().toUpperCase();
+      const { data: coupon, error: couponErr } = await supabase
+        .from('cupones')
+        .select('*')
+        .eq('codigo', codigo)
+        .eq('activo', true)
+        .maybeSingle();
+
+      if (couponErr) throw couponErr;
+      if (!coupon) {
+        setCouponError('Cupón inválido o inactivo.');
+        return;
+      }
+
+      const todayStr = new Date().toLocaleDateString('sv-SE');
+      if (coupon.fecha_inicio && todayStr < coupon.fecha_inicio) {
+        setCouponError('El cupón aún no está vigente.');
+        return;
+      }
+      if (coupon.fecha_fin && todayStr > coupon.fecha_fin) {
+        setCouponError('El cupón ha caducado.');
+        return;
+      }
+      if (coupon.cantidad_usos_maximo !== null && coupon.cantidad_usos_actual >= coupon.cantidad_usos_maximo) {
+        setCouponError('El cupón ha alcanzado su límite de usos.');
+        return;
+      }
+      if (coupon.servicio_id && coupon.servicio_id !== servicioSeleccionado?.id) {
+        setCouponError('Este cupón no aplica para el servicio seleccionado.');
+        return;
+      }
+      if (coupon.paquete_catalogo_id && coupon.paquete_catalogo_id !== paqueteSeleccionado?.id) {
+        setCouponError('Este cupón no aplica para el paquete seleccionado.');
+        return;
+      }
+
+      const pacienteId = paraQuien === 'yo' ? perfilClinicoPropio?.id_paciente : familiarId;
+      if (!pacienteId) {
+        setCouponError('Debes seleccionar un paciente antes de aplicar el cupón.');
+        return;
+      }
+
+      if (coupon.un_uso_por_paciente) {
+        const { data: usoExistente, error: usoErr } = await supabase
+          .from('cupones_usos')
+          .select('id')
+          .eq('cupon_id', coupon.id)
+          .eq('paciente_id', pacienteId)
+          .limit(1);
+
+        if (usoErr) throw usoErr;
+        if (usoExistente && usoExistente.length > 0) {
+          setCouponError('Ya has utilizado este cupón anteriormente.');
+          return;
+        }
+      }
+
+      if (coupon.tipo_cupon === 'Empresa') {
+        const { data: vinculo, error: vinculoErr } = await supabase
+          .from('empresa_pacientes')
+          .select('id, empresa_id')
+          .eq('paciente_id', pacienteId)
+          .limit(1);
+
+        if (vinculoErr) throw vinculoErr;
+        if (!vinculo || vinculo.length === 0) {
+          setCouponError('Este cupón es exclusivo para pacientes de empresas. No perteneces a ninguna empresa vinculada.');
+          return;
+        }
+      }
+
+      setCouponData(coupon);
+      let descText = '';
+      if (coupon.tipo_descuento === 'Porcentaje') {
+        descText = `${coupon.valor_descuento}% de descuento`;
+      } else if (coupon.tipo_descuento === 'Monto') {
+        descText = `S/ ${coupon.valor_descuento} de descuento`;
+      }
+      setCouponSuccess(`Cupón aplicado: ${descText}`);
+    } catch (err) {
+      setCouponError(err.message || 'Error al validar el cupón.');
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setCouponCode('');
+    setCouponData(null);
+    setCouponError('');
+    setCouponSuccess('');
   };
 
   const renderStepIndicator = () => {
@@ -1209,94 +1364,7 @@ const BookAppointment = () => {
     );
   };
 
-  const renderAppointmentSummary = (isMobile = false) => {
-    let pacienteNombre = '-';
-    if (paraQuien === 'yo') {
-      const nameYo = perfilClinicoPropio
-        ? `${perfilClinicoPropio.nombres} ${perfilClinicoPropio.apellido_paterno} ${perfilClinicoPropio.apellido_materno || ''}`.trim()
-        : `${perfilUsuario?.nombres} ${perfilUsuario?.apellido_paterno} ${perfilUsuario?.apellido_materno || ''}`.trim();
-      pacienteNombre = `${nameYo} (Yo)`;
-    } else if (paraQuien === 'familiar' && familiarId) {
-      const dep = perfilesDependientes.find(d => d.id_paciente === familiarId);
-      pacienteNombre = dep
-        ? `${dep.nombres} ${dep.apellido_paterno} ${dep.apellido_materno || ''}`.trim()
-        : '-';
-    }
-
-    const modNombre = modalidad || '-';
-    
-    let localNombre = '-';
-    if (modalidad === 'Virtual') {
-      localNombre = 'No aplica';
-    } else if (localSeleccionado) {
-      localNombre = localSeleccionado.nombre;
-    }
-
-    const servicioNombre = servicioSeleccionado?.nombre_servicio || '-';
-    
-    let formaReserva = '-';
-    if (servicioSeleccionado) {
-      if (tipoSesion === 'normal') {
-        formaReserva = 'Sesión Individual';
-      } else if (tipoSesion === 'paquete' && paqueteSeleccionado) {
-        formaReserva = paqueteSeleccionado.type === 'adquirido' 
-          ? `Paquete Adquirido (${paqueteSeleccionado.nombre_paquete_snapshot || paqueteSeleccionado.nombre_paquete})`
-          : `Comprar Paquete (${paqueteSeleccionado.nombre_paquete})`;
-      }
-    }
-
-    const especialistaNombre = psicologaSeleccionada?.nombres_apellidos || '-';
-    
-    let fechaHoraStr = '-';
-    if (fechaSeleccionada && slotSeleccionado) {
-      fechaHoraStr = `${fechaSeleccionada.toLocaleDateString('es-PE')} a las ${slotSeleccionado.inicio}`;
-    }
-
-    let price = '-';
-    if (servicioSeleccionado) {
-      const calculatedPrice = paqueteSeleccionado
-        ? (paqueteSeleccionado.type === 'adquirido' ? 0 : paqueteSeleccionado.precio_total)
-        : servicioSeleccionado.precio_sesion;
-      price = `S/ ${calculatedPrice}`;
-    }
-
-    const summaryItems = [
-      { label: 'Paciente', value: pacienteNombre, active: pacienteNombre !== '-' },
-      { label: 'Modalidad', value: modNombre, active: modNombre !== '-' },
-    ];
-
-    if (modalidad !== 'Virtual') {
-      summaryItems.push({ label: 'Sede / Local', value: localNombre, active: localNombre !== '-' });
-    }
-
-    summaryItems.push(
-      { label: 'Servicio', value: servicioNombre, active: servicioNombre !== '-' },
-      { label: 'Forma de Reserva', value: formaReserva, active: formaReserva !== '-' },
-      { label: 'Especialista', value: especialistaNombre, active: especialistaNombre !== '-' },
-      { label: 'Fecha y Hora', value: fechaHoraStr, active: fechaHoraStr !== '-' },
-      { label: 'Monto estimado', value: price, active: price !== '-' }
-    );
-
-    return (
-      <div className={`bg-white border border-gray-200 rounded-2xl p-5 shadow-sm text-left ${isMobile ? 'mb-6' : ''}`}>
-        <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wider mb-4 border-b pb-2 font-sans">
-          Resumen de Reserva
-        </h3>
-        <div className="divide-y divide-gray-100">
-          {summaryItems.map((item, idx) => (
-            <div key={idx} className="py-2.5 flex justify-between gap-4 text-xs">
-              <span className="text-gray-400 font-semibold uppercase tracking-wider">{item.label}</span>
-              <span className={`text-right font-sans font-bold ${
-                item.active ? 'text-[#003178]' : 'text-gray-300'
-              }`}>
-                {item.value}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
+  // renderAppointmentSummary was removed as we now use ReservationSummary component.
 
   // ----------------------------------------------------
   // CALENDAR DAYS (SYNCHRONOUS)
@@ -1321,10 +1389,11 @@ const BookAppointment = () => {
               fechaSeleccionada.getDate() === d;
 
             return (
-              <button
+              <CalendarDayCard
                 key={`day-${d}`}
-                type="button"
-                disabled={!isEnabled}
+                day={d}
+                isSelected={isSelected}
+                isEnabled={isEnabled}
                 onClick={() => {
                   const newDate = new Date(año, mes, d);
                   setFechaSeleccionada(newDate);
@@ -1332,539 +1401,10 @@ const BookAppointment = () => {
                   setSlotsDisponibles(slots);
                   setSlotSeleccionado(null);
                 }}
-                className={`py-2.5 rounded-xl font-bold transition-all ${isSelected
-                  ? 'bg-[#003178] text-white shadow-sm font-sans'
-                  : isEnabled
-                    ? 'bg-blue-50/60 hover:bg-blue-100/70 text-gray-900 border border-blue-100 cursor-pointer font-sans'
-                    : 'bg-gray-55 text-gray-300 border border-gray-100 cursor-not-allowed opacity-50 font-sans'
-                  }`}
-              >
-                {d}
-              </button>
+              />
             );
           })}
         </div>
-      </div>
-    );
-  };
-
-  // ----------------------------------------------------
-  // STEP CONTENT RENDERERS
-  // ----------------------------------------------------
-
-  const renderPaciente = () => {
-    return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <button
-            type="button"
-            className={`p-5 rounded-2xl border text-left transition-all cursor-pointer ${paraQuien === 'yo'
-              ? 'border-[#003178] bg-blue-50/40 shadow-sm'
-              : 'border-gray-200 hover:bg-gray-55'
-              }`}
-            onClick={() => handlePacienteChange('yo', '')}
-          >
-            <div className="flex items-center gap-4">
-              <div className={`h-12 w-12 rounded-xl flex items-center justify-center transition-colors ${paraQuien === 'yo' ? 'bg-[#003178] text-white' : 'bg-gray-100 text-gray-500'
-                }`}>
-                <span className="material-symbols-outlined">account_circle</span>
-              </div>
-              <div>
-                <p className="font-bold text-gray-900 text-sm font-sans">Cita para mí</p>
-                <p className="text-xs text-gray-500 mt-0.5">Reservar usando mi ficha clínica</p>
-              </div>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            className={`p-5 rounded-2xl border text-left transition-all cursor-pointer ${paraQuien === 'familiar'
-              ? 'border-[#003178] bg-blue-50/40 shadow-sm'
-              : 'border-gray-200 hover:bg-gray-55'
-              }`}
-            onClick={() => handlePacienteChange('familiar', '')}
-          >
-            <div className="flex items-center gap-4">
-              <div className={`h-12 w-12 rounded-xl flex items-center justify-center transition-colors ${paraQuien === 'familiar' ? 'bg-[#003178] text-white' : 'bg-gray-100 text-gray-500'
-                }`}>
-                <span className="material-symbols-outlined">groups</span>
-              </div>
-              <div>
-                <p className="font-bold text-gray-900 text-sm font-sans">Cita para otro miembro</p>
-                <p className="text-xs text-gray-500 mt-0.5">Hijo, pareja o familiar dependiente</p>
-              </div>
-            </div>
-          </button>
-        </div>
-
-        {paraQuien === 'yo' && (
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-left">
-            <h4 className="font-bold text-sm text-slate-800 uppercase tracking-wider mb-3 font-sans">Datos del Titular</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="text-xs text-gray-400">Nombre Completo</p>
-                <p className="font-semibold text-slate-900">{perfilUsuario?.nombres} {perfilUsuario?.apellido_paterno} {perfilUsuario?.apellido_materno}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-400">DNI / Documento</p>
-                <p className="font-semibold text-slate-900">{perfilUsuario?.dni}</p>
-              </div>
-            </div>
-
-            {esClinicoIncompletoYo && (
-              <div className="mt-4 p-4 bg-red-50 border border-red-100 text-red-800 rounded-xl flex gap-3">
-                <span className="material-symbols-outlined text-red-500 text-[20px] shrink-0 mt-0.5">warning</span>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide">Ficha Clínica Incompleta</p>
-                  <p className="text-xs text-red-600 mt-1 leading-relaxed">
-                    Para agendar una cita debes completar primero tu información clínica.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/dashboard/profile')}
-                    className="mt-3 bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[14px]">edit</span>
-                    Perfil
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {paraQuien === 'familiar' && (
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4 text-left">
-            <h4 className="font-bold text-sm text-slate-800 uppercase tracking-wider font-sans">Seleccionar Miembro Dependiente</h4>
-
-            {perfilesDependientes.length === 0 ? (
-              <div className="text-center py-6">
-                <p className="text-sm text-gray-500 mb-3">No tienes ningún miembro dependiente registrado en esta cuenta.</p>
-                <button
-                  type="button"
-                  onClick={() => navigate('/dashboard/family')}
-                  className="bg-[#003178] hover:bg-blue-900 text-white font-bold text-xs px-4 py-2 rounded-lg transition-colors inline-flex items-center gap-1.5 cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[16px]">person_add</span>
-                  Agregar Miembro Dependiente
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Familiar *</label>
-                  <select
-                    value={familiarId}
-                    onChange={e => handlePacienteChange('familiar', e.target.value)}
-                    className="w-full p-3 border border-gray-200 bg-white rounded-xl text-sm focus:border-[#003178] outline-none text-gray-700"
-                  >
-                    <option value="">Selecciona un miembro...</option>
-                    {perfilesDependientes.map(dep => (
-                      <option key={dep.id_paciente} value={dep.id_paciente}>
-                        {dep.nombres} {dep.apellido_paterno} ({dep.parentesco}) - DNI: {dep.dni}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {familiarId && esClinicoIncompletoFamiliar && (
-                  <div className="p-4 bg-red-50 border border-red-100 text-red-800 rounded-xl flex gap-3">
-                    <span className="material-symbols-outlined text-red-500 text-[20px] shrink-0 mt-0.5">warning</span>
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide">Ficha Clínica Incompleta del Familiar</p>
-                      <p className="text-xs text-red-600 mt-1 leading-relaxed">
-                        Para agendar una cita para este familiar, primero debes completar los campos obligatorios de su ficha clínica (dirección, género, ubigeo para Perú, etc.) en "Miembros".
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => navigate('/dashboard/family')}
-                        className="mt-3 bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[14px]">edit</span>
-                        Completar Datos del Familiar
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderModalidad = () => {
-    return (
-      <div className="space-y-6">
-        <h4 className="font-bold text-sm text-gray-500 uppercase tracking-widest border-b pb-2 text-left">Seleccionar Modalidad</h4>
-        
-        {!isPresencialAvailable && !isVirtualAvailable ? (
-          <div className="p-4 bg-red-55 border border-red-200 text-red-800 rounded-2xl text-xs font-semibold flex items-center gap-2">
-            <span className="material-symbols-outlined">error</span>
-            No hay disponibilidad en el sistema en este momento. Inténtelo más tarde.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {isPresencialAvailable && (
-              <button
-                type="button"
-                className={`p-5 rounded-2xl border text-left cursor-pointer transition-all ${
-                  modalidad === 'Presencial' ? 'border-[#003178] bg-blue-50/40 shadow-sm' : 'border-gray-200 hover:bg-gray-55'
-                }`}
-                onClick={() => handleModalidadChange('Presencial')}
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`h-12 w-12 rounded-xl flex items-center justify-center transition-colors ${
-                    modalidad === 'Presencial' ? 'bg-[#003178] text-white' : 'bg-gray-100 text-gray-500'
-                  }`}>
-                    <span className="material-symbols-outlined">storefront</span>
-                  </div>
-                  <div>
-                    <h5 className="font-bold text-gray-900 text-sm font-sans">Atención Presencial</h5>
-                    <p className="text-xs text-gray-500 mt-0.5">Asiste a nuestros consultorios físicos</p>
-                  </div>
-                </div>
-              </button>
-            )}
-            
-            {isVirtualAvailable && (
-              <button
-                type="button"
-                className={`p-5 rounded-2xl border text-left cursor-pointer transition-all ${
-                  modalidad === 'Virtual' ? 'border-[#003178] bg-blue-50/40 shadow-sm' : 'border-gray-200 hover:bg-gray-55'
-                }`}
-                onClick={() => handleModalidadChange('Virtual')}
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`h-12 w-12 rounded-xl flex items-center justify-center transition-colors ${
-                    modalidad === 'Virtual' ? 'bg-[#003178] text-white' : 'bg-gray-100 text-gray-500'
-                  }`}>
-                    <span className="material-symbols-outlined">videocam</span>
-                  </div>
-                  <div>
-                    <h5 className="font-bold text-gray-900 text-sm font-sans">Atención Virtual</h5>
-                    <p className="text-xs text-gray-555 mt-0.5">Sesión online mediante videollamada</p>
-                  </div>
-                </div>
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderLocal = () => {
-    return (
-      <div className="space-y-6">
-        <h4 className="font-bold text-sm text-gray-500 uppercase tracking-widest border-b pb-2 text-left">Seleccionar Local</h4>
-        {validLocales.length === 0 ? (
-          <div className="p-4 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl flex items-center gap-2">
-            <span className="material-symbols-outlined text-amber-500">warning</span>
-            No hay locales disponibles con horarios libres en modalidad presencial.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {validLocales.map(l => {
-              const isSelected = localSeleccionado?.id === l.id;
-              return (
-                <button
-                  key={l.id}
-                  type="button"
-                  className={`p-5 rounded-2xl border text-left cursor-pointer transition-all ${
-                    isSelected ? 'border-[#003178] bg-blue-50/40 shadow-sm' : 'border-gray-200 hover:bg-gray-55'
-                  }`}
-                  onClick={() => handleLocalChange(l)}
-                >
-                  <div className="flex items-start gap-4">
-                    <div className={`h-12 w-12 rounded-xl flex items-center justify-center transition-colors shrink-0 ${
-                      isSelected ? 'bg-[#003178] text-white' : 'bg-gray-100 text-gray-500'
-                    }`}>
-                      <span className="material-symbols-outlined">storefront</span>
-                    </div>
-                    <div>
-                      <h5 className="font-bold text-gray-900 text-base font-sans">{l.nombre}</h5>
-                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">{l.direccion || 'Dirección de sede'}</p>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderServicioTipo = () => {
-    const hasPacks = paquetes.length > 0 || paquetesAdquiridos.length > 0;
-
-    return (
-      <div className="space-y-6">
-        <h4 className="font-bold text-sm text-gray-500 uppercase tracking-widest border-b pb-2 text-left">Servicios Disponibles</h4>
-        
-        {/* Filters Panel */}
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 md:p-5 text-left">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Filter 1: Search Service */}
-            <div>
-              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Buscar servicio</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Ej. Terapia Infantil, Ansiedad..."
-                  value={buscarServicio}
-                  onChange={(e) => setBuscarServicio(e.target.value)}
-                  className="w-full p-3 border border-gray-200 bg-white rounded-xl text-sm focus:border-[#003178] outline-none text-gray-700 font-medium pl-10"
-                />
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">search</span>
-              </div>
-            </div>
-
-            {/* Filter 2: Local selector (Only for Presencial) */}
-            {modalidad === 'Presencial' && (
-              <div>
-                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Local</label>
-                <select
-                  value={localSeleccionado?.id || ''}
-                  onChange={(e) => {
-                    const loc = dbData.locales.find(l => l.id === e.target.value);
-                    if (loc) handleLocalChange(loc);
-                  }}
-                  className="w-full p-3 border border-gray-200 bg-white rounded-xl text-sm focus:border-[#003178] outline-none text-gray-700 font-semibold"
-                >
-                  {validLocales.map(l => (
-                    <option key={l.id} value={l.id}>{l.nombre}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Services grid */}
-        {serviciosFiltrados.length === 0 ? (
-          <p className="text-sm text-gray-500 bg-gray-50 border rounded-xl p-6 text-center">
-            No hay servicios disponibles que cumplan con los filtros de búsqueda y disponibilidad.
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {serviciosFiltrados.map(s => {
-              const isSelected = servicioSeleccionado?.id === s.id;
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  className={`p-5 rounded-2xl border text-left cursor-pointer transition-all ${isSelected
-                    ? 'border-[#003178] bg-blue-50/40 shadow-sm'
-                    : 'border-gray-205 hover:bg-gray-50'
-                    }`}
-                  onClick={() => handleServicioChange(s)}
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h5 className="font-bold text-gray-900 text-base font-sans">{s.nombre_servicio}</h5>
-                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">{s.descripcion || 'Sin descripción'}</p>
-                      <p className="text-xs text-[#003178] font-bold mt-2">Duración: {s.duracion_minutos || 50} min</p>
-                    </div>
-                    <span className="text-lg font-black text-[#003178] shrink-0 ml-4">S/ {s.precio_sesion}</span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Opciones de reserva (embedded) */}
-        {servicioSeleccionado && (
-          <div className="mt-6 pt-6 border-t border-gray-100 space-y-4 text-left">
-            <h5 className="font-bold text-sm text-slate-800 uppercase tracking-wider font-sans">
-              Forma de Reserva para: {servicioSeleccionado.nombre_servicio}
-            </h5>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Normal session */}
-              <button
-                type="button"
-                className={`p-5 rounded-2xl border text-left cursor-pointer transition-all ${
-                  tipoSesion === 'normal' ? 'border-[#003178] bg-blue-50/40 shadow-sm' : 'border-gray-200 hover:bg-gray-50'
-                }`}
-                onClick={() => handleTipoSesionChange('normal')}
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`h-12 w-12 rounded-xl flex items-center justify-center transition-colors ${
-                    tipoSesion === 'normal' ? 'bg-[#003178] text-white' : 'bg-gray-100 text-gray-500'
-                  }`}>
-                    <span className="material-symbols-outlined">person</span>
-                  </div>
-                  <div>
-                    <p className="font-bold text-gray-900 text-sm font-sans font-semibold">Sesión Individual</p>
-                    <p className="text-xs text-gray-555 mt-0.5">Paga solo por la sesión programada</p>
-                    <p className="text-sm font-black text-[#003178] mt-2">S/ {servicioSeleccionado.precio_sesion}</p>
-                  </div>
-                </div>
-              </button>
-
-              {/* Package session (only shown if there are packages available) */}
-              {hasPacks && (
-                <button
-                  type="button"
-                  className={`p-5 rounded-2xl border text-left cursor-pointer transition-all ${
-                    tipoSesion === 'paquete' ? 'border-[#003178] bg-blue-50/40 shadow-sm' : 'border-gray-200 hover:bg-gray-50'
-                  }`}
-                  onClick={() => handleTipoSesionChange('paquete')}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={`h-12 w-12 rounded-xl flex items-center justify-center transition-colors ${
-                      tipoSesion === 'paquete' ? 'bg-[#003178] text-white' : 'bg-gray-100 text-gray-500'
-                    }`}>
-                      <span className="material-symbols-outlined">inventory_2</span>
-                    </div>
-                    <div>
-                      <p className="font-bold text-gray-900 text-sm font-sans font-semibold">Sesión con Paquete</p>
-                      <p className="text-xs text-gray-555 mt-0.5">Usa o adquiere un paquete de sesiones</p>
-                      <p className="text-xs text-[#003178] font-bold mt-2 font-sans">Tarifas con descuento</p>
-                    </div>
-                  </div>
-                </button>
-              )}
-            </div>
-
-            {/* Packages list display */}
-            {tipoSesion === 'paquete' && hasPacks && (
-              <div className="bg-slate-55 border border-slate-200 rounded-2xl p-5 space-y-5">
-                {/* Prepaid acquired packages */}
-                {paquetesAdquiridos.length > 0 && (
-                  <div className="space-y-3">
-                    <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5 font-sans">
-                      <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                      Tus Paquetes Adquiridos Disponibles (Pre-pagados)
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {paquetesAdquiridos.map(p => {
-                        const isSelected = paqueteSeleccionado?.id === p.id && paqueteSeleccionado?.type === 'adquirido';
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            className={`p-4 rounded-xl border text-left bg-white cursor-pointer transition-all ${
-                              isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/30 shadow-sm' : 'border-emerald-200 hover:bg-emerald-50/30'
-                            }`}
-                            onClick={() => handlePaqueteChange({ ...p, type: 'adquirido' })}
-                          >
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <p className="font-bold text-sm text-emerald-900 font-sans">{p.nombre_paquete_snapshot || 'Paquete Adquirido'}</p>
-                                <p className="text-xs text-emerald-700 mt-0.5">
-                                  {p.sesiones_netas} {p.sesiones_netas === 1 ? 'sesión neta disponible' : 'sesiones netas disponibles'}
-                                </p>
-                              </div>
-                              <span className="text-xs font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full shrink-0 font-sans">Usar</span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Catalog packages */}
-                {paquetes.length > 0 && (
-                  <div className="space-y-3">
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider font-sans">
-                      Adquirir Nuevo Paquete
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {paquetes.map(p => {
-                        const isSelected = paqueteSeleccionado?.id === p.id && paqueteSeleccionado?.type !== 'adquirido';
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            className={`p-4 rounded-xl border text-left bg-white cursor-pointer transition-all ${
-                              isSelected ? 'border-[#003178] ring-1 ring-[#003178] shadow-sm' : 'border-gray-200 hover:bg-gray-50'
-                            }`}
-                            onClick={() => handlePaqueteChange({ ...p, type: 'catalogo' })}
-                          >
-                            <p className="font-bold text-sm text-gray-900 font-sans">{p.nombre_paquete}</p>
-                            <p className="text-xs text-gray-505 mt-0.5">{p.cantidad_sesiones ?? p.cant_sesiones} sesiones incluidas</p>
-                            <p className="text-sm font-black text-[#003178] mt-2">S/ {p.precio_total}</p>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderEspecialista = () => {
-    return (
-      <div className="space-y-6">
-        <h4 className="font-bold text-sm text-gray-500 uppercase tracking-widest border-b pb-2 text-left">Especialistas para este Servicio</h4>
-
-        {especialistasConFecha.length === 0 ? (
-          <p className="text-sm text-gray-500 bg-gray-55 border rounded-xl p-6 text-center">
-            No hay especialistas con horarios libres disponibles para este servicio en los próximos días.
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* Show only real specialists */}
-            {especialistasConFecha.map(p => {
-              const isSelected = psicologaSeleccionada?.id === p.id;
-              const foto = getPsicoFoto(p.id) || '/default_perfil psicologia.jpeg';
-
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  className={`flex flex-col bg-white rounded-2xl border overflow-hidden text-left cursor-pointer transition-all ${
-                    isSelected
-                      ? 'border-[#003178] ring-2 ring-blue-50/50 shadow-md animate-in fade-in duration-100'
-                      : 'border-gray-200 hover:bg-gray-50 hover:shadow-sm'
-                  }`}
-                  onClick={() => handleEspecialistaChange(p)}
-                >
-                  <div className="h-44 w-full overflow-hidden bg-gray-100 relative">
-                    <img src={foto} alt={p.nombres_apellidos} className="w-full h-full object-cover object-top" />
-                    {isSelected && (
-                      <div className="absolute top-3 right-3 bg-[#003178] text-white rounded-full p-1 flex items-center justify-center">
-                        <span className="material-symbols-outlined text-[16px]">check</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-4 flex-1 flex flex-col justify-between">
-                    <div>
-                      <h5 className="font-bold text-gray-900 text-sm leading-tight font-sans">{p.nombres_apellidos}</h5>
-                      <p className="text-xs text-gray-400 mt-1">{p.correo || 'Especialista CEPSITCED'}</p>
-                    </div>
-
-                    <div className="mt-4 pt-3 border-t border-gray-100 flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[#003178] text-[16px]">calendar_today</span>
-                      <span className="text-[11px] font-bold text-[#003178] font-sans">
-                        Disponible desde: {new Date(p.fechaProx + 'T00:00:00').toLocaleDateString('es-PE')}
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Validation message if no specialist is selected */}
-        {!psicologaSeleccionada && (
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-semibold flex items-center gap-2 mt-4 text-left">
-            <span className="material-symbols-outlined text-[16px]">info</span>
-            Selecciona una especialista para continuar.
-          </div>
-        )}
       </div>
     );
   };
@@ -1881,7 +1421,7 @@ const BookAppointment = () => {
           </div>
         )}
 
-        <div className="grid lg:grid-cols-[1fr_360px] gap-6 items-start">
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6 items-start">
           {/* Calendar side */}
           <div className="h-[430px] max-h-[430px] bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-0 overflow-hidden">
             <div>
@@ -1939,17 +1479,13 @@ const BookAppointment = () => {
                   {slotsDisponibles.map(slot => {
                     const isSelected = slotSeleccionado?.id === slot.id;
                     return (
-                      <button
+                      <TimeSlotCard
                         key={slot.id}
-                        type="button"
-                        className={`p-2.5 rounded-xl border text-center font-bold text-xs cursor-pointer h-10 flex items-center justify-center transition-all ${isSelected
-                            ? 'bg-[#003178] border-[#003178] text-white shadow-sm font-sans'
-                            : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-55'
-                          }`}
+                        inicio={slot.inicio}
+                        fin={slot.fin}
+                        isSelected={isSelected}
                         onClick={() => setSlotSeleccionado(slot)}
-                      >
-                        {slot.inicio} - {slot.fin}
-                      </button>
+                      />
                     );
                   })}
                 </div>
@@ -1975,10 +1511,6 @@ const BookAppointment = () => {
         : '';
     }
 
-    const price = paqueteSeleccionado
-      ? (paqueteSeleccionado.type === 'adquirido' ? 0 : paqueteSeleccionado.precio_total)
-      : servicioSeleccionado?.precio_sesion;
-
     return (
       <div className="space-y-6">
         <h4 className="font-bold text-sm text-gray-500 uppercase tracking-widest border-b pb-2 text-left">Confirmación y Pago</h4>
@@ -1991,142 +1523,85 @@ const BookAppointment = () => {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-          {/* Summary Details */}
-          <div className="md:col-span-7 bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm text-left">
-            <h5 className="font-bold text-sm text-slate-800 uppercase tracking-wider mb-4 border-b pb-2 font-sans">Resumen de la Cita</h5>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4 text-sm">
-              <div>
-                <p className="text-xs text-gray-400">Paciente</p>
-                <p className="font-bold text-slate-800 mt-0.5">{pacienteNombre}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-400">Especialista</p>
-                <p className="font-bold text-slate-800 mt-0.5">
-                  {psicologaSeleccionada?.nombres_apellidos}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-400">Servicio</p>
-                <p className="font-bold text-[#003178] mt-0.5 font-sans">{servicioSeleccionado?.nombre_servicio}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-400">Modalidad</p>
-                <p className="font-bold text-slate-800 mt-0.5 capitalize">{modalidad}</p>
-              </div>
-              {modalidad === 'Presencial' && (
-                <div>
-                  <p className="text-xs text-gray-400">Ubicación / Local</p>
-                  <p className="font-bold text-slate-800 mt-0.5">
-                    {activeLocal?.nombre || 'Local Central'}
+          <PaymentSummaryCard
+            pacienteNombre={pacienteNombre}
+            especialistaNombre={psicologaSeleccionada?.nombres_apellidos}
+            servicioNombre={servicioSeleccionado?.nombre_servicio}
+            modalidad={modalidad}
+            localNombre={activeLocal?.nombre || 'Local Central'}
+            fechaHoraTexto={`${fechaSeleccionada?.toLocaleDateString('es-PE')} de ${slotSeleccionado?.hora_inicio?.slice(0, 5) || '--:--'} a ${slotSeleccionado?.hora_fin?.slice(0, 5) || '--:--'}`}
+            comentario={comentario}
+          />
+
+          <div className="md:col-span-5 space-y-4">
+            <PaymentMethodCard
+              paqueteSeleccionado={paqueteSeleccionado}
+              metodoPago={metodoPago}
+              modalidad={modalidad}
+              precioFinal={couponData ? precioConDescuento : precioFinalCalculado}
+              onMetodoPagoChange={setMetodoPago}
+              onVerDatosPagoClick={() => setShowPaymentModal(true)}
+            />
+
+            {/* Cupón / Código de Descuento */}
+            {paqueteSeleccionado?.type !== 'adquirido' && (
+              <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm space-y-3">
+                <h5 className="font-bold text-xs text-gray-500 uppercase tracking-wider">
+                  Cupón o Código de Descuento
+                </h5>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={couponCode}
+                    onChange={(e) => { setCouponCode(e.target.value); setCouponError(''); setCouponSuccess(''); }}
+                    placeholder="Ingresa tu código"
+                    disabled={!!couponData}
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-xs focus:border-[#003178] outline-none text-gray-700 font-medium disabled:bg-gray-50 disabled:text-gray-400"
+                  />
+                  {couponData ? (
+                    <button
+                      type="button"
+                      onClick={handleRemoveCoupon}
+                      className="px-3 py-2 text-xs font-bold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      Quitar
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleApplyCoupon}
+                      disabled={couponLoading || !couponCode.trim()}
+                      className="px-4 py-2 text-xs font-bold text-white bg-[#003178] rounded-lg hover:bg-blue-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                    >
+                      {couponLoading ? 'Validando...' : 'Aplicar'}
+                    </button>
+                  )}
+                </div>
+                {couponError && (
+                  <p className="text-xs text-red-600 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">error</span>
+                    {couponError}
                   </p>
-                </div>
-              )}
-              <div className="col-span-2">
-                <p className="text-xs text-gray-400">Fecha y Hora</p>
-                <p className="font-bold text-slate-800 mt-0.5">
-                  {fechaSeleccionada?.toLocaleDateString('es-PE')} de {slotSeleccionado?.hora_inicio.slice(0, 5)} a {slotSeleccionado?.hora_fin.slice(0, 5)}
-                </p>
+                )}
+                {couponSuccess && (
+                  <p className="text-xs text-green-600 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                    {couponSuccess}
+                  </p>
+                )}
+                {couponData && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-2.5 text-xs text-green-800 space-y-1">
+                    <p className="font-semibold">Descuento aplicado</p>
+                    <p>Monto original: <span className="line-through">S/ {precioFinalCalculado}</span></p>
+                    <p className="font-bold text-green-900">Total a pagar: S/ {precioConDescuento}</p>
+                    {couponData.empresa_nombre && (
+                      <p className="text-green-600">Convenio: {couponData.empresa_nombre}</p>
+                    )}
+                  </div>
+                )}
               </div>
-              {comentario && (
-                <div className="col-span-2">
-                  <p className="text-xs text-gray-400">Observación</p>
-                  <p className="text-xs text-gray-600 mt-0.5 italic">"{comentario}"</p>
-                </div>
-              )}
-            </div>
+            )}
           </div>
-
-          {/* Payment Side */}
-          {paqueteSeleccionado?.type === 'adquirido' ? (
-            <div className="md:col-span-5 space-y-4 text-left">
-              <h5 className="font-bold text-sm text-slate-700 mb-3 font-sans">Método de Pago</h5>
-              <div className="p-4 bg-emerald-50 border border-emerald-250 text-emerald-800 rounded-2xl flex gap-3 shadow-sm">
-                <span className="material-symbols-outlined text-emerald-600 text-[24px] shrink-0">check_circle</span>
-                <div>
-                  <p className="font-bold text-sm">Sesión Pre-pagada</p>
-                  <p className="text-xs text-emerald-700 mt-0.5 font-medium">
-                    Se utilizará una sesión de tu paquete "{paqueteSeleccionado.nombre_paquete_snapshot || paqueteSeleccionado.nombre_paquete}".
-                  </p>
-                  <p className="text-[10px] text-emerald-600 font-bold mt-1.5 uppercase">
-                    Método de pago: {paqueteSeleccionado.metodo_pago}
-                  </p>
-                </div>
-              </div>
-              <div className="bg-[#003178]/5 border border-[#003178]/10 rounded-2xl p-4 flex justify-between items-center mt-6">
-                <span className="font-bold text-sm text-slate-700">Total a pagar:</span>
-                <span className="text-2xl font-black text-[#003178]">S/ 0</span>
-              </div>
-            </div>
-          ) : (
-            <div className="md:col-span-5 space-y-4 text-left">
-              <h5 className="font-bold text-sm text-slate-700 mb-3 font-sans">Selecciona el Método de Pago</h5>
-
-              <div className="flex flex-col gap-3">
-                <label className={`flex items-center p-4 border rounded-2xl cursor-pointer transition-all ${metodoPago === 'clinica'
-                  ? 'border-[#003178] bg-blue-50/20 shadow-sm'
-                  : 'border-gray-200 hover:bg-gray-50'
-                  } ${modalidad === 'Virtual' ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                  <input
-                    type="radio"
-                    name="metodoPago"
-                    value="clinica"
-                    disabled={modalidad === 'Virtual'}
-                    checked={metodoPago === 'clinica'}
-                    onChange={() => setMetodoPago('clinica')}
-                    className="w-4 h-4 text-[#003178] focus:ring-[#003178]"
-                  />
-                  <div className="ml-3 flex-1">
-                    <p className="font-bold text-sm text-gray-900 font-sans">Pago en Clínica</p>
-                    <p className="text-xs text-gray-500 mt-0.5 font-medium">Paga en la recepción física el día de tu cita</p>
-                  </div>
-                  <span className="material-symbols-outlined text-gray-400 text-[24px]">storefront</span>
-                </label>
-
-                <label className={`flex items-center p-4 border rounded-2xl cursor-pointer transition-all ${metodoPago === 'tarjeta'
-                  ? 'border-[#003178] bg-blue-50/20 shadow-sm'
-                  : 'border-gray-200 hover:bg-gray-50'
-                  }`}>
-                  <input
-                    type="radio"
-                    name="metodoPago"
-                    value="tarjeta"
-                    checked={metodoPago === 'tarjeta'}
-                    onChange={() => setMetodoPago('tarjeta')}
-                    className="w-4 h-4 text-[#003178] focus:ring-[#003178]"
-                  />
-                  <div className="ml-3 flex-1">
-                    <p className="font-bold text-sm text-gray-900 font-sans">Pago Online</p>
-                    <p className="text-xs text-gray-505 mt-0.5">Transferencia bancaria o Yape</p>
-                  </div>
-                  <span className="material-symbols-outlined text-gray-400 text-[24px]">credit_card</span>
-                </label>
-              </div>
-
-              {metodoPago === 'tarjeta' && (
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowPaymentModal(true)}
-                    className="w-full py-3 px-4 border border-[#003178] text-[#003178] hover:bg-blue-50/50 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">info</span>
-                    Ver datos de pago
-                  </button>
-                </div>
-              )}
-
-              {modalidad === 'Virtual' && (
-                <p className="text-[11px] text-amber-600 font-bold mt-1">
-                  * Para consultas virtuales, solo se permite Pago Online.
-                </p>
-              )}
-
-              <div className="bg-[#003178]/5 border border-[#003178]/10 rounded-2xl p-4 flex justify-between items-center mt-6">
-                <span className="font-bold text-sm text-slate-700">Total a pagar:</span>
-                <span className="text-2xl font-black text-[#003178]">S/ {price}</span>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     );
@@ -2212,17 +1687,474 @@ const BookAppointment = () => {
           {/* Main Content Area */}
           <div className="flex-1 min-w-0 w-full">
             {/* Mobile Summary */}
-            <div className="lg:hidden">
-              {renderAppointmentSummary(true)}
-            </div>
+            {currentStepId !== 'pago' && (
+              <div className="lg:hidden w-full relative mb-6">
+                <ReservationSummary
+                  steps={steps}
+                  stepIndex={stepIndex}
+                  paraQuien={paraQuien}
+                  perfilUsuario={perfilUsuario}
+                  perfilClinicoPropio={perfilClinicoPropio}
+                  perfilesDependientes={perfilesDependientes}
+                  familiarId={familiarId}
+                  modalidad={modalidad}
+                  localSeleccionado={localSeleccionado}
+                  servicioSeleccionado={servicioSeleccionado}
+                  tipoSesion={tipoSesion}
+                  paqueteSeleccionado={paqueteSeleccionado}
+                  psicologaSeleccionada={psicologaSeleccionada}
+                  fechaSeleccionada={fechaSeleccionada}
+                  slotSeleccionado={slotSeleccionado}
+                  montoEstimado={displayMontoEstimado}
+                  isMobile={true}
+                  onStepClick={handleStepClick}
+                />
+              </div>
+            )}
 
             <div className="bg-white border border-gray-200 rounded-2xl p-6 md:p-8 shadow-sm">
               <div className="min-h-[300px]">
-                {currentStepId === 'paciente' && renderPaciente()}
-                {currentStepId === 'modalidad' && renderModalidad()}
-                {currentStepId === 'local' && renderLocal()}
-                {currentStepId === 'servicio_tipo' && renderServicioTipo()}
-                {currentStepId === 'especialista' && renderEspecialista()}
+                {currentStepId === 'paciente_modalidad_local' && (
+                  <StepPatientSelection
+                    paraQuien={paraQuien}
+                    familiarId={familiarId}
+                    modalidad={modalidad}
+                    localSeleccionado={localSeleccionado}
+                    perfilUsuario={perfilUsuario}
+                    perfilClinicoPropio={perfilClinicoPropio}
+                    perfilesDependientes={perfilesDependientes}
+                    esClinicoIncompletoYo={esClinicoIncompletoYo}
+                    esClinicoIncompletoFamiliar={esClinicoIncompletoFamiliar}
+                    isPresencialAvailable={isPresencialAvailable}
+                    isVirtualAvailable={isVirtualAvailable}
+                    validLocales={validLocales}
+                    handlePacienteChange={handlePacienteChange}
+                    handleModalidadChange={handleModalidadChange}
+                    handleLocalChange={handleLocalChange}
+                    navigate={navigate}
+                  />
+                )}
+                {currentStepId === 'servicio_psicologo' && (
+                  <div className="space-y-3">
+                    {/* Switch/Toggle to select search mode */}
+                    <div className="flex justify-center w-full max-w-md mx-auto">
+                      <div className="bg-slate-100 p-1 rounded-2xl flex gap-1 shadow-inner border border-slate-200/50 w-full">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModoBusqueda('servicio');
+                            setServicioSeleccionado(null);
+                            setPsicologaSeleccionada(null);
+                            setTipoSesion('normal');
+                            setPaqueteSeleccionado(null);
+                            setFechaSeleccionada(null);
+                            setSlotSeleccionado(null);
+                            setServicioExpandidoId(null);
+                          }}
+                          className={`flex-1 px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                            modoBusqueda === 'servicio'
+                              ? 'bg-[#003178] text-white shadow-md'
+                              : 'bg-transparent text-slate-600 hover:bg-slate-200/55 hover:text-slate-800'
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5 justify-center">
+                            <span className="material-symbols-outlined text-[16px]">psychology</span>
+                            Buscar por Servicio
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModoBusqueda('especialista');
+                            setServicioSeleccionado(null);
+                            setPsicologaSeleccionada(null);
+                            setTipoSesion('normal');
+                            setPaqueteSeleccionado(null);
+                            setFechaSeleccionada(null);
+                            setSlotSeleccionado(null);
+                            setServicioExpandidoId(null);
+                          }}
+                          className={`flex-1 px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                            modoBusqueda === 'especialista'
+                              ? 'bg-[#003178] text-white shadow-md'
+                              : 'bg-transparent text-slate-600 hover:bg-slate-200/55 hover:text-slate-800'
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5 justify-center">
+                            <span className="material-symbols-outlined text-[16px]">person</span>
+                            Buscar por Especialista
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className={`flex gap-3 items-stretch w-full text-left max-h-[60vh] min-h-[260px] overflow-hidden ${
+                      modoBusqueda === 'especialista'
+                        ? 'flex-col-reverse md:flex-row-reverse'
+                        : 'flex-col md:flex-row'
+                    }`}>
+                      {/* Left Panel: Services Accordion */}
+                      <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-3 shadow-sm space-y-3 flex flex-col min-h-0 overflow-hidden">
+                        <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                          <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider font-sans">
+                            {modoBusqueda === 'servicio' ? '1. Elige un Servicio' : '2. Servicios Disponibles'}
+                          </h3>
+                          {modoBusqueda === 'servicio' && (
+                            <span className="text-[10px] text-slate-400 font-bold bg-white px-2 py-0.5 rounded-full border border-slate-100">
+                              {serviciosFiltrados.length} servicios
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Search Input inside Left Panel */}
+                        <div className="relative shrink-0">
+                          <input
+                            type="text"
+                            placeholder="Filtrar servicios..."
+                            value={buscarServicio}
+                            onChange={(e) => setBuscarServicio(e.target.value)}
+                            className="w-full p-2 pl-9 border border-slate-200 bg-white rounded-xl text-xs focus:border-[#003178] outline-none text-gray-700 font-medium shadow-sm"
+                          />
+                          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-[18px]">search</span>
+                        </div>
+
+                        {/* Services List */}
+                        <div className="space-y-2 overflow-y-auto flex-1 pr-1 h-full">
+                          {modoBusqueda === 'especialista' && !psicologaSeleccionada ? (
+                            <div className="flex flex-col items-center justify-center py-16 text-slate-400 text-center h-full">
+                              <span className="material-symbols-outlined text-4xl mb-2 text-slate-300 animate-pulse">face</span>
+                              <p className="text-xs font-semibold max-w-[200px] leading-relaxed">
+                                Selecciona una especialista a la derecha para ver los servicios que ofrece.
+                              </p>
+                            </div>
+                          ) : serviciosFiltrados.length === 0 ? (
+                            <p className="text-xs text-gray-500 bg-white border border-gray-150 rounded-xl p-4 text-center shadow-sm">
+                              No hay servicios disponibles para los filtros aplicados.
+                            </p>
+                          ) : (
+                            serviciosFiltrados.map(s => {
+                              const isExpanded = servicioExpandidoId === s.id;
+                              const isSelected = servicioSeleccionado?.id === s.id;
+
+                              // Dynamic pricing: resolve price before specialist selection
+                              const specialistsForService = especialistasElegibles.filter(emp => {
+                                if (!emp) return false;
+                                const assigned = (dbData.psicologoServicio || []).some(ps =>
+                                  ps && ps.psicologo_id === emp.id && ps.servicio_id === s.id
+                                );
+                                if (!assigned) return false;
+                                const hasSchedule = (dbData.horarios || []).some(h =>
+                                  h && h.empleado_id === emp.id &&
+                                  h.modalidad === modalidad &&
+                                  h.disponible &&
+                                  h.tipo !== 'salida' && h.tipo !== 'otro' &&
+                                  (modalidad === 'Virtual' || h.local_id === localSeleccionado?.id)
+                                );
+                                return hasSchedule;
+                              });
+                              const uniqueSpecialist = specialistsForService.length === 1 ? specialistsForService[0] : null;
+
+                              const resolvePrecio = (esp) => obtenerPrecioAplicable({
+                                servicio: s,
+                                paqueteCatalogo: null,
+                                especialista: esp,
+                                reglasPrecios: dbData.reglasPrecios,
+                                localId: localSeleccionado?.id || null,
+                                modalidad: modalidad,
+                                asignaciones: dbData.asignaciones,
+                                cargos: dbData.cargos
+                              });
+
+                              const precioInfo = psicologaSeleccionada
+                                ? resolvePrecio(psicologaSeleccionada)
+                                : uniqueSpecialist
+                                  ? resolvePrecio(uniqueSpecialist)
+                                  : resolvePrecio(null);
+
+                              const precioBaseServicio = Number(s.precio_sesion || 0);
+                              const tieneReglaPrecio = (dbData.reglasPrecios || []).some(r =>
+                                r.servicio_id === s.id && (Number(r.precio || 0) > 0 || Number(r.descuento_porcentaje || 0) > 0)
+                              );
+                              const tienePrecioIndividual = precioBaseServicio > 0 || tieneReglaPrecio;
+                              const precioEsAconsultar = tienePrecioIndividual && !psicologaSeleccionada && !uniqueSpecialist && specialistsForService.length > 1 && tieneReglaPrecio;
+                              const estaBloqueado = serviciosBloqueados.has(s.nombre_servicio);
+
+                              return (
+                                <div
+                                  key={s.id}
+                                  className={`border rounded-xl transition-all overflow-hidden ${
+                                    isSelected
+                                      ? 'border-[#003178] bg-blue-50/10 shadow-sm'
+                                      : 'border-slate-200/60 bg-white hover:border-slate-355'
+                                  }`}
+                                >
+                                  {/* Accordion Header */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleServiceHeaderClick(s)}
+                                    className="w-full py-2 px-3 flex justify-between items-center text-left font-sans cursor-pointer focus:outline-none"
+                                  >
+                                    <div className="flex-1 pr-3">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <p className={`text-xs font-bold leading-tight ${isSelected ? 'text-[#003178]' : 'text-slate-800'}`}>
+                                          {s.nombre_servicio}
+                                        </p>
+                                        {s.promocion_activa && (() => {
+                                          const today = new Date().toISOString().split('T')[0];
+                                          const inRange = (!s.promo_fecha_inicio || today >= s.promo_fecha_inicio) && (!s.promo_fecha_fin || today <= s.promo_fecha_fin);
+                                          const titulo = s.promocion_titulo || (s.promo_descuento_porcentaje ? `${s.promo_descuento_porcentaje}% OFF` : null);
+                                          if (!inRange || !titulo) return null;
+                                          return (
+                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[8px] font-bold uppercase tracking-wider whitespace-nowrap">
+                                              {titulo}
+                                            </span>
+                                          );
+                                        })()}
+                                      </div>
+                                      <p className="text-[9px] text-gray-400 font-semibold mt-0.5">
+                                        Duración: {s.duracion_minutos || s.duracion || 60} min
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center shrink-0 gap-0.5">
+                                      {estaBloqueado && (
+                                        <span className="material-symbols-outlined text-amber-500 text-[16px]">lock</span>
+                                      )}
+                                      <span className={`material-symbols-outlined text-gray-400 text-[18px] transition-transform duration-200 ${isExpanded ? 'rotate-180 text-[#003178]' : ''}`}>
+                                        expand_more
+                                      </span>
+                                    </div>
+                                  </button>
+
+                                  {/* Accordion Panel (Formas de reserva) */}
+                                  {isExpanded && (() => {
+                                    const sPaquetes = (dbData.paquetesCatalogo || []).filter(p => p.servicio_id === s.id).sort((a, b) => {
+                                      const numA = parseInt((a.nombre_paquete || '').match(/\d+/)?.[0], 10) || 0;
+                                      const numB = parseInt((b.nombre_paquete || '').match(/\d+/)?.[0], 10) || 0;
+                                      return numA - numB;
+                                    });
+                                    const sPaquetesAdquiridos = (activePatientPackages || []).filter(p => p.servicio_id === s.id);
+                                    const tieneOpciones = tienePrecioIndividual || (sPaquetesAdquiridos.length > 0) || (sPaquetes.length > 0);
+                                    return (
+                                      <div className="px-2 pb-2 pt-0.5 border-t border-slate-100 bg-slate-50/50 space-y-1 animate-in slide-in-from-top-1 duration-100">
+                                        {estaBloqueado ? (
+                                          <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-center">
+                                            <p className="text-[10px] font-bold text-amber-800">
+                                              Ya cuentas con una sesión pendiente para este servicio. Para agendar la siguiente sesión, debes concluir tu cita anterior.
+                                            </p>
+                                          </div>
+                                        ) : (
+                                        <>
+                                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                                          Forma de Reserva:
+                                        </p>
+                                        <div className="grid grid-cols-1 gap-1">
+                                          {!tieneOpciones ? (
+                                            <p className="text-[10px] text-gray-500 text-center py-2.5 bg-white rounded-lg border border-dashed border-gray-200 px-2 font-semibold">
+                                              No hay tarifas o paquetes configurados actualmente para este servicio con la especialista seleccionada.
+                                            </p>
+                                          ) : (
+                                            <>
+                                              {/* Individual Session Card */}
+                                              {tienePrecioIndividual && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setTipoSesion('normal');
+                                                    setPaqueteSeleccionado(null);
+                                                  }}
+                                                  className={`p-2 rounded-xl border-2 text-left flex justify-between items-center transition-all duration-200 cursor-pointer ${
+                                                    tipoSesion === 'normal'
+                                                      ? 'border-[#003178] bg-blue-50/30'
+                                                      : 'border-slate-200/60 bg-white hover:bg-slate-55'
+                                                  }`}
+                                                >
+                                                  <div>
+                                                    <p className="text-[11px] font-bold text-slate-800">Sesión Individual</p>
+                                                    <p className="text-[9px] text-gray-400 mt-0.5">Paga solo por la sesión programada</p>
+                                                  </div>
+                                                  <div className="text-right">
+                                                    {precioEsAconsultar ? (
+                                                      <span className="text-[11px] font-black text-[#003178] font-sans">A consultar</span>
+                                                    ) : (
+                                                      <>
+                                                        {precioInfo.tienePromocion && (
+                                                          <span className="text-[9px] text-gray-400 line-through mr-1">
+                                                            S/ {precioInfo.precioAntesPromocion}
+                                                          </span>
+                                                        )}
+                                                        <span className="text-[11px] font-black text-[#003178] font-sans">
+                                                          S/ {precioInfo.precioFinal}
+                                                        </span>
+                                                      </>
+                                                    )}
+                                                  </div>
+                                                </button>
+                                              )}
+
+                                              {/* Acquired Prepaid Packages */}
+                                              {sPaquetesAdquiridos.length > 0 && sPaquetesAdquiridos.map(p => {
+                                                const isPackSelected = tipoSesion === 'paquete' && paqueteSeleccionado?.type === 'adquirido' && paqueteSeleccionado?.id === p.id;
+                                                return (
+                                                  <button
+                                                    key={p.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                      setTipoSesion('paquete');
+                                                      setPaqueteSeleccionado({ ...p, type: 'adquirido' });
+                                                    }}
+                                                    className={`p-2 rounded-xl border-2 text-left flex justify-between items-center transition-all duration-200 cursor-pointer ${
+                                                      isPackSelected
+                                                        ? 'border-[#003178] bg-blue-50/30'
+                                                        : 'border-slate-200/60 bg-white hover:bg-slate-55'
+                                                    }`}
+                                                  >
+                                                    <div>
+                                                      <div className="flex items-center gap-1.5">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                        <p className="text-[11px] font-bold text-slate-800">{p.nombre_paquete_snapshot || 'Paquete Adquirido'}</p>
+                                                      </div>
+                                                      <p className="text-[9px] text-gray-400 mt-0.5">{p.sesiones_netas} sesiones disponibles</p>
+                                                    </div>
+                                                    <span className="text-[11px] font-black text-[#003178] font-sans">
+                                                      Usar
+                                                    </span>
+                                                  </button>
+                                                );
+                                              })}
+
+                                                {/* New Catalog Packages to Buy */}
+                                              {sPaquetes.length > 0 && sPaquetes.map(p => {
+                                                const isPackSelected = tipoSesion === 'paquete' && paqueteSeleccionado?.type === 'catalogo' && paqueteSeleccionado?.id === p.id;
+                                                const packPrecioInfo = obtenerPrecioAplicable({
+                                                  servicio: s,
+                                                  paqueteCatalogo: p,
+                                                  especialista: psicologaSeleccionada || uniqueSpecialist || null,
+                                                  reglasPrecios: dbData.reglasPrecios,
+                                                  localId: localSeleccionado?.id || null,
+                                                  modalidad: modalidad,
+                                                  asignaciones: dbData.asignaciones,
+                                                  cargos: dbData.cargos
+                                                });
+
+                                                return (
+                                                  <button
+                                                    key={p.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                      setTipoSesion('paquete');
+                                                      setPaqueteSeleccionado({ ...p, type: 'catalogo' });
+                                                    }}
+                                                    className={`p-2 rounded-xl border-2 text-left flex justify-between items-center transition-all duration-200 cursor-pointer ${
+                                                      isPackSelected
+                                                        ? 'border-[#003178] bg-blue-50/30'
+                                                        : 'border-slate-200/60 bg-white hover:bg-slate-55'
+                                                    }`}
+                                                  >
+                                                    <div>
+                                                      <p className="text-[11px] font-bold text-slate-800">{p.nombre_paquete}</p>
+                                                      <p className="text-[9px] text-gray-400 mt-0.5">{p.cantidad_sesiones ?? p.cant_sesiones} sesiones</p>
+                                                    </div>
+                                                    <div className="text-right">
+                                                      {packPrecioInfo.tienePromocion && (
+                                                        <span className="text-[9px] text-gray-400 line-through mr-1">
+                                                          S/ {packPrecioInfo.precioAntesPromocion}
+                                                        </span>
+                                                      )}
+                                                      <span className="text-[11px] font-black text-[#003178] font-sans">
+                                                        S/ {packPrecioInfo.precioFinal}
+                                                      </span>
+                                                    </div>
+                                                  </button>
+                                                );
+                                              })}
+                                            </>
+                                          )}
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                    );
+                                  })()}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right Panel: Specialists */}
+                      <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-3 shadow-sm space-y-3 flex flex-col h-full min-h-0 overflow-hidden">
+                        <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                          <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider font-sans">
+                            {modoBusqueda === 'servicio' ? '2. Especialistas Compatibles' : '1. Elige una Especialista'}
+                          </h3>
+                          {modoBusqueda === 'servicio' && servicioSeleccionado && (
+                            <span className="text-[10px] text-slate-400 font-bold bg-white px-2 py-0.5 rounded-full border border-slate-100">
+                              {especialistasConFecha.length} disponibles
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Specialists Cards Container */}
+                        <div className="space-y-2 overflow-y-auto flex-1 pr-1 h-full">
+                          {modoBusqueda === 'servicio' && !servicioSeleccionado ? (
+                            <div className="flex flex-col items-center justify-center py-16 text-slate-400 text-center h-full">
+                              <span className="material-symbols-outlined text-4xl mb-2 text-slate-300 animate-pulse">psychology</span>
+                              <p className="text-xs font-semibold max-w-[200px] leading-relaxed">
+                                Selecciona un servicio a la izquierda para ver las especialistas compatibles.
+                              </p>
+                            </div>
+                          ) : especialistasConFecha.length === 0 ? (
+                            <p className="text-xs text-gray-500 bg-white border border-gray-150 rounded-xl p-4 text-center shadow-sm">
+                              No hay especialistas disponibles con horarios libres en la modalidad seleccionada.
+                            </p>
+                          ) : (
+                            especialistasConFecha.map(p => {
+                              const isSelected = psicologaSeleccionada?.id === p.id;
+                              const specialty = getEspecialidadEspecialista(p.id);
+                              const nextDateStr = p.fechaProx
+                                ? new Date(p.fechaProx + 'T00:00:00').toLocaleDateString('es-PE', { day: 'numeric', month: 'short' })
+                                : null;
+
+                              return (
+                                <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => handleEspecialistaChange(p)}
+                                    className={`w-full p-2.5 border rounded-xl text-left flex justify-between items-start transition-all cursor-pointer focus:outline-none ${
+                                      isSelected
+                                        ? 'border-[#003178] bg-white ring-2 ring-blue-50 shadow-sm'
+                                        : 'border-slate-200/60 bg-white hover:border-slate-300'
+                                    }`}
+                                  >
+                                    <div className="space-y-1 flex-1 min-w-0">
+                                      <h5 className={`font-bold text-xs font-sans leading-tight ${isSelected ? 'text-[#003178]' : 'text-slate-800'}`}>
+                                        {p.nombres_apellidos}
+                                      </h5>
+                                      <p className="text-[10px] text-slate-500 font-semibold font-sans">
+                                        {specialty}
+                                      </p>
+                                      {nextDateStr && (
+                                        <div className="flex items-center gap-1 mt-0.5">
+                                          <span className="material-symbols-outlined text-[12px] text-[#003178]">calendar_today</span>
+                                          <span className="text-[9px] font-bold text-[#003178] bg-blue-50/60 border border-blue-100 rounded px-1.5 py-0.5 font-sans whitespace-nowrap">
+                                            Prox: {nextDateStr}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                    <span className="shrink-0 ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-green-50 text-green-700 border border-green-200 uppercase tracking-wide">
+                                      Disponible
+                                    </span>
+                                  </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {currentStepId === 'horario' && renderHorario()}
                 {currentStepId === 'pago' && renderPago()}
               </div>
@@ -2233,7 +2165,7 @@ const BookAppointment = () => {
                   type="button"
                   onClick={prevStep}
                   disabled={stepIndex === 0 || savingAppointment || paymentModalRedirectOnClose}
-                  className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-55 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   Atrás
                 </button>
@@ -2270,9 +2202,30 @@ const BookAppointment = () => {
           </div>
 
           {/* Desktop Summary Sidebar */}
-          <div className="hidden lg:block w-72 xl:w-80 shrink-0">
-            {renderAppointmentSummary(false)}
-          </div>
+          {currentStepId !== 'pago' && (
+            <div className="hidden lg:block w-full lg:w-72 xl:w-80 shrink-0 relative">
+              <ReservationSummary
+                steps={steps}
+                stepIndex={stepIndex}
+                paraQuien={paraQuien}
+                perfilUsuario={perfilUsuario}
+                perfilClinicoPropio={perfilClinicoPropio}
+                perfilesDependientes={perfilesDependientes}
+                familiarId={familiarId}
+                modalidad={modalidad}
+                localSeleccionado={localSeleccionado}
+                servicioSeleccionado={servicioSeleccionado}
+                tipoSesion={tipoSesion}
+                paqueteSeleccionado={paqueteSeleccionado}
+                psicologaSeleccionada={psicologaSeleccionada}
+                fechaSeleccionada={fechaSeleccionada}
+                slotSeleccionado={slotSeleccionado}
+                montoEstimado={displayMontoEstimado}
+                isMobile={false}
+                onStepClick={handleStepClick}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -2281,7 +2234,7 @@ const BookAppointment = () => {
           onClose={() => setShowCulqiModal(false)}
           emailDefault={getEmailDefault()}
           concept={servicioSeleccionado?.nombre_servicio}
-          price={paqueteSeleccionado ? (paqueteSeleccionado.type === 'adquirido' ? 0 : paqueteSeleccionado.precio_total) : servicioSeleccionado?.precio_sesion}
+          price={precioFinalCalculado}
           onPay={saveAppointment}
           navigate={navigate}
         />
@@ -2613,7 +2566,7 @@ const CulqiModal = ({ onClose, emailDefault, concept, price, onPay, navigate }) 
       try {
         const res = await onPay('Pagado', 'Online (Culqi)');
         if (res.success) {
-          alert('¡Pago procesado exitosamente por Culqi!');
+          toast.success('¡Pago procesado exitosamente por Culqi!', { duration: 4000 });
           onClose();
           navigate('/dashboard/appointments');
         } else {

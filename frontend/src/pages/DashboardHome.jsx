@@ -93,13 +93,13 @@ const DashboardHome = () => {
     cargarCitasYDocumentos();
   }, [loadingProfile, perfilClinicoPropio, perfilesDependientes]);
 
-  const ahora = new Date();
+  const hoyStr = new Date().toISOString().split('T')[0];
   
-  const ESTADOS_ACTIVOS = ['Pendiente', 'Confirmada', 'Reprogramada'];
+  const ESTADOS_ACTIVOS = ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'];
 
-  // Buscar la cita futura más próxima
+  // Buscar la cita futura más próxima (incluye citas de hoy)
   const proximaCita = appointments
-    .filter(cita => new Date(`${cita.fecha_cita}T${cita.hora_inicio}`) > ahora && ESTADOS_ACTIVOS.includes(cita.estado_cita))
+    .filter(cita => cita.fecha_cita >= hoyStr && ESTADOS_ACTIVOS.includes(cita.estado_cita))
     .sort((a, b) => new Date(`${a.fecha_cita}T${a.hora_inicio}`) - new Date(`${b.fecha_cita}T${b.hora_inicio}`))[0];
 
   const getCitaStateBadge = (estado) => {
@@ -123,7 +123,7 @@ const DashboardHome = () => {
   const currentError = profileError || error;
 
   const appointmentsHistorial = appointments.filter(cita =>
-    ['Pendiente', 'Confirmada', 'Reprogramada', 'Completada', 'Realizada'].includes(cita.estado_cita)
+    ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta', 'Completada', 'Realizada', 'Atendida', 'Ausente'].includes(cita.estado_cita)
   );
 
   return (
@@ -165,7 +165,7 @@ const DashboardHome = () => {
                   Tienes una cita próxima
                 </h3>
                 <p className="text-blue-100/90 text-sm leading-relaxed font-medium">
-                  Con <strong className="text-white font-semibold">{proximaCita.psicologa_nombre}</strong> para el servicio <strong className="text-white font-semibold">{proximaCita.servicio}</strong>.
+                  Con <strong className="text-white font-semibold">{proximaCita.psicologa_nombre}</strong> para <strong className="text-white font-semibold">{proximaCita.servicio}</strong>{proximaCita.numero_sesion ? <span className="text-blue-200 font-semibold"> — Sesión #{proximaCita.numero_sesion}</span> : ''}.
                 </p>
                 <div className="flex flex-wrap gap-3 text-xs font-semibold text-blue-100/80 pt-1">
                   <span className="flex items-center gap-1 bg-white/10 px-2.5 py-1 rounded-lg">
@@ -180,6 +180,23 @@ const DashboardHome = () => {
                     <span className="material-symbols-outlined text-[14px]">{proximaCita.modalidad === 'Virtual' ? 'videocam' : 'storefront'}</span>
                     {proximaCita.modalidad}
                   </span>
+                  {proximaCita.modalidad === 'Virtual' && proximaCita.link_reunion && proximaCita.link_reunion.trim() !== '' && (
+                    <a
+                      href={proximaCita.link_reunion}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 bg-green-500/20 text-green-100 border border-green-400/30 px-3 py-1 rounded-lg hover:bg-green-500/30 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">videocam</span>
+                      Unirse a Reunión
+                    </a>
+                  )}
+                  {proximaCita.paquete_id && (
+                    <span className="inline-flex items-center gap-1 bg-amber-400/20 text-amber-100 border border-amber-400/30 px-2.5 py-1 rounded-lg">
+                      <span className="material-symbols-outlined text-[14px]">confirmation_number</span>
+                      Prepago
+                    </span>
+                  )}
                 </div>
               </div>
               <button
@@ -213,220 +230,108 @@ const DashboardHome = () => {
             </div>
           )}
 
-          {/* Stats Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm flex items-center justify-between group hover:shadow-md transition-all duration-200">
-              <div className="space-y-1">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Próximas Citas</p>
-                <p className="text-3xl font-bold text-gray-900">
-                  {appointments.filter(cita => new Date(`${cita.fecha_cita}T${cita.hora_inicio}`) > ahora && ESTADOS_ACTIVOS.includes(cita.estado_cita)).length}
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-blue-50 text-[#003178] flex items-center justify-center">
-                <span className="material-symbols-outlined text-[24px]">event_note</span>
-              </div>
-            </div>
 
-            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm flex items-center justify-between group hover:shadow-md transition-all duration-200">
-              <div className="space-y-1">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Documentos</p>
-                <p className="text-3xl font-bold text-gray-900">{documentsCount}</p>
+          <div className="grid grid-cols-1 gap-8">
+            {/* Próximas Citas Table */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                <h4 className="text-base font-semibold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[#003178]">calendar_today</span>
+                  Próximas Citas
+                </h4>
               </div>
-              <div className="w-12 h-12 rounded-xl bg-yellow-50 text-yellow-700 flex items-center justify-center">
-                <span className="material-symbols-outlined text-[24px]">pending_actions</span>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm flex items-center justify-between group hover:shadow-md transition-all duration-200">
-              <div className="space-y-1">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Miembros Registrados</p>
-                <p className="text-3xl font-bold text-gray-900">
-                  {perfilesDependientes ? perfilesDependientes.length : 0}
-                </p>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-green-50 text-green-700 flex items-center justify-center">
-                <span className="material-symbols-outlined text-[24px]">group</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* LADO IZQUIERDO: PRÓXIMAS CITAS LIST & CLINICIANS */}
-            <div className="lg:col-span-8 space-y-8">
-               {/* Próximas Citas Table */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                  <h4 className="text-base font-semibold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[#003178]">calendar_today</span>
-                    Próximas Citas
-                  </h4>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-gray-50/30 border-b border-gray-100">
-                        <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Paciente</th>
-                        <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Servicio / Especialista</th>
-                        <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Fecha y Hora</th>
-                        <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Modalidad</th>
-                        <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado</th>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50/30 border-b border-gray-100">
+                      <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Paciente</th>
+                      <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Servicio / Especialista</th>
+                      <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Fecha y Hora</th>
+                      <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Modalidad</th>
+                      <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {appointments.filter(cita => cita.fecha_cita >= hoyStr && ESTADOS_ACTIVOS.includes(cita.estado_cita)).length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="text-center py-12 text-slate-400 text-sm">
+                          No tienes citas agendadas próximamente.
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {appointments.filter(cita => new Date(`${cita.fecha_cita}T${cita.hora_inicio}`) > ahora && ESTADOS_ACTIVOS.includes(cita.estado_cita)).length === 0 ? (
-                        <tr>
-                          <td colSpan="5" className="text-center py-12 text-slate-400 text-sm">
-                            No tienes citas agendadas próximamente.
-                          </td>
-                        </tr>
-                      ) : (
-                        appointments
-                          .filter(cita => new Date(`${cita.fecha_cita}T${cita.hora_inicio}`) > ahora && ESTADOS_ACTIVOS.includes(cita.estado_cita))
-                          .sort((a, b) => new Date(`${a.fecha_cita}T${a.hora_inicio}`) - new Date(`${b.fecha_cita}T${b.hora_inicio}`))
-                          .map((cita) => (
-                            <tr key={cita.id} className="hover:bg-gray-50/30 transition-colors">
-                              <td className="py-4 px-6">
-                                <span className="text-gray-900 font-bold text-sm block">{cita.paciente_nombre}</span>
-                              </td>
-                              <td className="py-4 px-6">
-                                <span className="text-gray-900 font-semibold text-sm block leading-tight">{cita.servicio}</span>
-                                <span className="text-xs text-gray-500 font-medium">{cita.psicologa_nombre}</span>
-                              </td>
-                              <td className="py-4 px-6 text-sm">
-                                <span className="text-gray-900 font-medium">
-                                  {new Date(cita.fecha_cita + 'T00:00:00').toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                </span>
-                                <br />
-                                <span className="text-xs text-gray-500 font-semibold">{cita.hora_inicio?.slice(0, 5)} - {cita.hora_fin?.slice(0, 5)}</span>
-                              </td>
-                              <td className="py-4 px-6 text-sm">
-                                <span className="capitalize font-semibold text-gray-700 flex items-center gap-1.5">
-                                  <span className="material-symbols-outlined text-[16px] text-gray-400">{cita.modalidad === 'Virtual' ? 'videocam' : 'storefront'}</span>
-                                  {cita.modalidad}
-                                </span>
-                              </td>
-                              <td className="py-4 px-6">
-                                {getCitaStateBadge(cita.estado_cita)}
-                              </td>
-                            </tr>
-                          ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                    ) : (
+                      appointments
+                        .filter(cita => cita.fecha_cita >= hoyStr && ESTADOS_ACTIVOS.includes(cita.estado_cita))
+                        .sort((a, b) => new Date(`${a.fecha_cita}T${a.hora_inicio}`) - new Date(`${b.fecha_cita}T${b.hora_inicio}`))
+                        .slice(0, 2)
+                        .map((cita) => (
+                          <tr key={cita.id} className="hover:bg-gray-50/30 transition-colors">
+                            <td className="py-4 px-6">
+                              <span className="text-gray-900 font-bold text-sm block">{cita.paciente_nombre}</span>
+                            </td>
+                            <td className="py-4 px-6">
+                              <span className="text-gray-900 font-semibold text-sm block leading-tight">{cita.servicio}{cita.numero_sesion ? <span className="ml-1 text-xs text-gray-400 font-semibold">#S{cita.numero_sesion}</span> : ''}</span>
+                              <span className="text-xs text-gray-500 font-medium">{cita.psicologa_nombre}</span>
+                            </td>
+                            <td className="py-4 px-6 text-sm">
+                              <span className="text-gray-900 font-medium">
+                                {new Date(cita.fecha_cita + 'T00:00:00').toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </span>
+                              <br />
+                              <span className="text-xs text-gray-500 font-semibold">{cita.hora_inicio?.slice(0, 5)} - {cita.hora_fin?.slice(0, 5)}</span>
+                            </td>
+                            <td className="py-4 px-6 text-sm">
+                              <span className="capitalize font-semibold text-gray-700 flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-[16px] text-gray-400">{cita.modalidad === 'Virtual' ? 'videocam' : 'storefront'}</span>
+                                {cita.modalidad}
+                              </span>
+                            </td>
+                            <td className="py-4 px-6">
+                              {getCitaStateBadge(cita.estado_cita)}
+                            </td>
+                          </tr>
+                        ))
+                    )}
+                  </tbody>
+                </table>
               </div>
+            </div>
 
-              {/* Equipo Clínico / Especialistas que has visto */}
-              {appointments.length > 0 && (
-                <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm space-y-4">
-                  <h4 className="text-base font-semibold text-gray-900 uppercase tracking-wider flex items-center gap-2 border-b border-gray-100 pb-2">
-                    <span className="material-symbols-outlined text-[#003178]">medical_services</span>
-                    Especialistas que te han atendido
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {(() => {
-                      const uniqueSpecs = [];
-                      const seenIds = new Set();
-                      appointments.forEach(cita => {
-                        if (cita.psicologo_id && !seenIds.has(cita.psicologo_id)) {
-                          seenIds.add(cita.psicologo_id);
-                          uniqueSpecs.push({
-                            id: cita.psicologo_id,
-                            nombre: cita.psicologa_nombre,
-                            servicio: cita.servicio
-                          });
-                        }
-                      });
-                      
-                      if (uniqueSpecs.length === 0) {
-                        return <p className="text-sm text-gray-550 italic col-span-2">Aún no has tenido sesiones con especialistas.</p>;
+            {/* Equipo Clínico / Especialistas que has visto — sin avatar */}
+            {appointments.length > 0 && (
+              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm space-y-4">
+                <h4 className="text-base font-semibold text-gray-900 uppercase tracking-wider flex items-center gap-2 border-b border-gray-100 pb-2">
+                  <span className="material-symbols-outlined text-[#003178]">medical_services</span>
+                  Especialistas que te han atendido
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {(() => {
+                    const uniqueSpecs = [];
+                    const seenIds = new Set();
+                    appointments.forEach(cita => {
+                      if (cita.psicologo_id && !seenIds.has(cita.psicologo_id)) {
+                        seenIds.add(cita.psicologo_id);
+                        uniqueSpecs.push({
+                          id: cita.psicologo_id,
+                          nombre: cita.psicologa_nombre,
+                          servicio: cita.servicio
+                        });
                       }
+                    });
+                    
+                    if (uniqueSpecs.length === 0) {
+                      return <p className="text-sm text-gray-550 italic col-span-2">Aún no has tenido sesiones con especialistas.</p>;
+                    }
 
-                      return uniqueSpecs.map(spec => (
-                        <div key={spec.id} className="flex items-center gap-4 p-4 border border-gray-100 rounded-xl bg-slate-50/50 hover:bg-slate-50 transition-colors">
-                          <div className="w-10 h-10 rounded-full bg-blue-100 text-[#003178] flex items-center justify-center text-sm font-bold uppercase shadow-sm">
-                            {spec.nombre?.charAt(0) || 'E'}
-                          </div>
-                          <div>
-                            <p className="font-semibold text-sm text-gray-900">{spec.nombre}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">{spec.servicio || 'Psicoterapia'}</p>
-                          </div>
-                        </div>
-                      ));
-                    })()}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* LADO DERECHO: ACCIONES RÁPIDAS & HISTORIAL RESUMIDO */}
-            <div className="lg:col-span-4 space-y-8">
-              {/* Acciones Rápidas */}
-              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm space-y-4">
-                <h4 className="text-base font-semibold text-gray-900 uppercase tracking-wider flex items-center gap-2 border-b border-gray-100 pb-2">
-                  <span className="material-symbols-outlined text-[#003178]">bolt</span>
-                  Acciones Rápidas
-                </h4>
-                <div className="grid grid-cols-1 gap-3">
-                  <button
-                    onClick={() => navigate('/dashboard/book-appointment')}
-                    className="w-full flex items-center gap-3 p-4 rounded-xl border border-gray-100 bg-white hover:bg-blue-50/50 hover:border-blue-200 transition-all text-left font-semibold text-sm text-gray-700 cursor-pointer shadow-sm"
-                  >
-                    <span className="material-symbols-outlined text-[#003178]">calendar_month</span>
-                    Agendar Cita
-                  </button>
-                  <button
-                    onClick={() => navigate('/dashboard/profile')}
-                    className="w-full flex items-center gap-3 p-4 rounded-xl border border-gray-100 bg-white hover:bg-blue-50/50 hover:border-blue-200 transition-all text-left font-semibold text-sm text-gray-700 cursor-pointer shadow-sm"
-                  >
-                    <span className="material-symbols-outlined text-[#003178]">description</span>
-                    Ver Historia Clínica
-                  </button>
-                  <button
-                    onClick={() => navigate('/dashboard/family')}
-                    className="w-full flex items-center gap-3 p-4 rounded-xl border border-gray-100 bg-white hover:bg-blue-50/50 hover:border-blue-200 transition-all text-left font-semibold text-sm text-gray-700 cursor-pointer shadow-sm"
-                  >
-                    <span className="material-symbols-outlined text-[#003178]">groups</span>
-                    Ver Miembros
-                  </button>
-                  <button
-                    onClick={() => navigate('/dashboard/documents')}
-                    className="w-full flex items-center gap-3 p-4 rounded-xl border border-gray-100 bg-white hover:bg-blue-50/50 hover:border-blue-200 transition-all text-left font-semibold text-sm text-gray-700 cursor-pointer shadow-sm"
-                  >
-                    <span className="material-symbols-outlined text-[#003178]">folder_open</span>
-                    Ver Documentos
-                  </button>
-                </div>
-              </div>
-              
-              {/* Historial Resumido */}
-              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm space-y-4">
-                <h4 className="text-base font-semibold text-gray-900 uppercase tracking-wider flex items-center gap-2 border-b border-gray-100 pb-2">
-                  <span className="material-symbols-outlined text-[#003178]">history</span>
-                  Historial de Sesiones
-                </h4>
-                <p className="text-xs text-gray-500 font-semibold">Total de sesiones registradas: {appointmentsHistorial.length}</p>
-                <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
-                  {appointmentsHistorial.length === 0 ? (
-                    <p className="text-xs text-gray-400 italic">No hay sesiones registradas para mostrar.</p>
-                  ) : (
-                    appointmentsHistorial.map(cita => (
-                      <div key={cita.id} className="flex justify-between items-center p-3 border-b border-gray-100 text-xs">
-                        <div className="space-y-0.5">
-                          <p className="font-semibold text-gray-800 leading-tight">{cita.servicio}</p>
-                          <p className="text-[10px] text-gray-400 font-semibold">
-                            {new Date(cita.fecha_cita + 'T00:00:00').toLocaleDateString('es-PE', { day: 'numeric', month: 'short' })} • {cita.hora_inicio?.slice(0, 5)}
-                          </p>
-                        </div>
-                        <div>
-                          {getCitaStateBadge(cita.estado_cita)}
-                        </div>
+                    return uniqueSpecs.map(spec => (
+                      <div key={spec.id} className="p-4 border border-gray-100 rounded-xl bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                        <p className="font-semibold text-sm text-gray-900">{spec.nombre}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{spec.servicio || 'Psicoterapia'}</p>
                       </div>
-                    ))
-                  )}
+                    ));
+                  })()}
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
         </div>

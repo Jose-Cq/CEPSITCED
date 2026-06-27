@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 
+const FALLBACK_IMAGE = '/logo-cepsitced.png';
+
 const MissionVisionSection = ({ config = null, loading = false }) => {
   const [isVisible, setIsVisible] = useState(false);
   const sectionRef = useRef(null);
@@ -43,10 +45,13 @@ const MissionVisionSection = ({ config = null, loading = false }) => {
   }
 
   // Fallbacks if configuration table has no rows or is empty
+  const safeMisionTitulo = config?.mision_titulo || 'Nuestra Misión';
   const safeMisionSub = config?.mision_subtitulo || 'Salud y Bienestar Emocional';
   const safeMisionText = config?.mision_texto || 'Ofrecer y brindar servicios psicológicos dirigidos a estudiantes, instituciones y comunidades, promoviendo la salud mental en nuestra sociedad a través de una atención responsable, ética y comprometida con el bienestar de los pacientes en todas las áreas.';
+  const safeVisionTitulo = config?.vision_titulo || 'Nuestra Visión';
   const safeVisionSub = config?.vision_subtitulo || 'Compromiso Ético y Calidad';
   const safeVisionText = config?.vision_texto || 'Ser una institución destacada y reconocida en el ámbito de la salud mental y el apoyo a instituciones educativas, contribuyendo a la prevención, promoción e intervención psicológica con calidad humana, ética profesional y compromiso social.';
+  const safeImagenUrl = config?.nosotros_imagen_url || FALLBACK_IMAGE;
 
   return (
     <section
@@ -80,9 +85,10 @@ const MissionVisionSection = ({ config = null, loading = false }) => {
           >
             <div className="relative w-full rounded-3xl border border-slate-100/80 bg-white p-8 shadow-sm hover:shadow-md hover:border-blue-200 transition-all duration-300 flex flex-col items-center justify-center min-h-[420px] flex-1">
               <img
-                src="/logo-cepsitced.png"
+                src={safeImagenUrl}
                 alt="Logo CEPSITCED"
                 className="max-w-[260px] max-h-[220px] object-contain select-none transition-transform duration-500 hover:scale-105"
+                onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMAGE; }}
               />
               {/* Sello de confianza flotante */}
               <div className="absolute -bottom-4 -right-4 bg-[#003178] text-white p-5 rounded-2xl shadow-xl hidden sm:flex items-center gap-3 border border-blue-800">
@@ -104,7 +110,7 @@ const MissionVisionSection = ({ config = null, loading = false }) => {
             <div className="group rounded-3xl bg-white border border-slate-100/80 p-8 md:p-10 text-left hover:shadow-xl hover:border-blue-300 hover:scale-[1.01] hover:bg-blue-50/40 transition-all duration-300 ease-out flex flex-col justify-between relative overflow-hidden shadow-sm">
               <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50/40 rounded-bl-full pointer-events-none group-hover:scale-125 transition-transform duration-500" />
               <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-2 uppercase tracking-tight">Nuestra Misión</h3>
+                <h3 className="text-2xl font-bold text-gray-900 mb-2 uppercase tracking-tight">{safeMisionTitulo}</h3>
                 <p className="text-[#003178] font-bold text-xs uppercase tracking-wider border-l-4 border-[#6cbdfe] pl-3 mb-3">
                   {safeMisionSub}
                 </p>
@@ -118,7 +124,7 @@ const MissionVisionSection = ({ config = null, loading = false }) => {
             <div className="group rounded-3xl bg-white border border-slate-100/80 p-8 md:p-10 text-left hover:shadow-xl hover:border-blue-300 hover:scale-[1.01] hover:bg-blue-50/40 transition-all duration-300 ease-out flex flex-col justify-between relative overflow-hidden shadow-sm">
               <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50/40 rounded-bl-full pointer-events-none group-hover:scale-125 transition-transform duration-500" />
               <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-2 uppercase tracking-tight">Nuestra Visión</h3>
+                <h3 className="text-2xl font-bold text-gray-900 mb-2 uppercase tracking-tight">{safeVisionTitulo}</h3>
                 <p className="text-[#003178] font-bold text-xs uppercase tracking-wider border-l-4 border-[#6cbdfe] pl-3 mb-3">
                   {safeVisionSub}
                 </p>

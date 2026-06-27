@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { usePacienteActual } from '../hooks/usePacienteActual';
 import { obtenerDocumentosPaciente } from '../utils/supabaseHelpers';
@@ -73,7 +74,7 @@ const Documents = ({ onNavigate }) => {
 
   const handleDownload = (doc) => {
     console.log('Descargando:', doc.titulo);
-    alert(`Descargando ${doc.titulo}...`);
+    toast.info(`Iniciando descarga de ${doc.titulo}...`);
   };
 
   const loading = loadingProfile || loadingDocs;

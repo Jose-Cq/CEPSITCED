@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-dom';
+import { Toaster } from 'sonner';
 import { supabase } from './supabaseClient';
 import AuthModal from './components/AuthModal';
 import RegisterModal from './components/RegisterModal';
@@ -114,10 +115,14 @@ const LandingPage = ({ onOpenAuth }) => {
           {/* Desktop Navigation Link Menu (visible only >= 1040px) */}
           <nav className="nav-desktop-only items-center gap-6 font-bold text-xs text-gray-550 uppercase tracking-widest">
             <a href="#inicio" className="hover:text-[#003178] transition-colors text-[#003178]">Inicio</a>
-            <a href="#nosotros" className="hover:text-[#003178] transition-colors">Nosotros</a>
+            {config?.mostrar_nosotros !== false && (
+              <a href="#nosotros" className="hover:text-[#003178] transition-colors">Nosotros</a>
+            )}
             <a href="#servicios" className="hover:text-[#003178] transition-colors">Servicios</a>
-            <a href="#specialists" className="hover:text-[#003178] transition-colors">Especialistas</a>
-            {testimonios.length > 0 && (
+            {config?.mostrar_personal !== false && (
+              <a href="#specialists" className="hover:text-[#003178] transition-colors">Especialistas</a>
+            )}
+            {testimonios.length > 0 && config?.mostrar_testimonios !== false && (
               <a href="#testimonios" className="hover:text-[#003178] transition-colors">Testimonios</a>
             )}
             <a href="#faq" className="hover:text-[#003178] transition-colors">FAQ</a>
@@ -179,13 +184,15 @@ const LandingPage = ({ onOpenAuth }) => {
             >
               Inicio
             </a>
-            <a
-              href="#nosotros"
-              onClick={() => setIsMenuOpen(false)}
-              className="hover:bg-slate-50 p-2.5 rounded-xl transition-all"
-            >
-              Nosotros
-            </a>
+            {config?.mostrar_nosotros !== false && (
+              <a
+                href="#nosotros"
+                onClick={() => setIsMenuOpen(false)}
+                className="hover:bg-slate-50 p-2.5 rounded-xl transition-all"
+              >
+                Nosotros
+              </a>
+            )}
             <a
               href="#servicios"
               onClick={() => setIsMenuOpen(false)}
@@ -193,14 +200,16 @@ const LandingPage = ({ onOpenAuth }) => {
             >
               Servicios
             </a>
-            <a
-              href="#specialists"
-              onClick={() => setIsMenuOpen(false)}
-              className="hover:bg-slate-50 p-2.5 rounded-xl transition-all"
-            >
-              Especialistas
-            </a>
-            {testimonios.length > 0 && (
+            {config?.mostrar_personal !== false && (
+              <a
+                href="#specialists"
+                onClick={() => setIsMenuOpen(false)}
+                className="hover:bg-slate-50 p-2.5 rounded-xl transition-all"
+              >
+                Especialistas
+              </a>
+            )}
+            {testimonios.length > 0 && config?.mostrar_testimonios !== false && (
               <a
                 href="#testimonios"
                 onClick={() => setIsMenuOpen(false)}
@@ -242,10 +251,12 @@ const LandingPage = ({ onOpenAuth }) => {
         />
 
         {/* Sección Nuestro Propósito */}
-        <MissionVisionSection
-          config={config}
-          loading={loadingConfig}
-        />
+        {config?.mostrar_nosotros !== false && (
+          <MissionVisionSection
+            config={config}
+            loading={loadingConfig}
+          />
+        )}
 
         {/* Sección de Servicios Clínicos */}
         <ServicesCarousel
@@ -253,12 +264,16 @@ const LandingPage = ({ onOpenAuth }) => {
         />
 
         {/* Sección de Especialistas */}
-        <SpecialistsCarousel
-          onOpenAuth={onOpenAuth}
-        />
+        {config?.mostrar_personal !== false && (
+          <SpecialistsCarousel
+            onOpenAuth={onOpenAuth}
+          />
+        )}
 
         {/* Sección de Testimonios */}
-        <TestimonialsCarousel testimonios={testimonios} />
+        {testimonios.length > 0 && config?.mostrar_testimonios !== false && (
+          <TestimonialsCarousel testimonios={testimonios} />
+        )}
 
         {/* Sección de Preguntas Frecuentes */}
         <FaqSection faqs={faqs} />
@@ -267,7 +282,7 @@ const LandingPage = ({ onOpenAuth }) => {
 
 
       {/* Footer */}
-      <Footer />
+      <Footer config={config} />
     </div>
   );
 };
@@ -327,6 +342,7 @@ const App = () => {
   if (isLoggedIn) {
     return (
       <PacienteProvider>
+        <Toaster richColors position="top-right" closeButton />
         <Routes>
           <Route path="/dashboard" element={<DashboardHome />} />
           <Route path="/dashboard/appointments" element={<Appointments />} />
@@ -370,6 +386,7 @@ const App = () => {
 
   return (
     <>
+      <Toaster richColors position="top-right" closeButton />
       <AuthModal
         isOpen={isAuthOpen}
         onClose={handleCloseAuth}

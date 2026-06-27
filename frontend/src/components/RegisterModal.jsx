@@ -1,272 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import ValidatedInput from './ValidatedInput';
+import ComboBox from './ComboBox';
+import { FlagImage, getFlagEmoji } from './FlagImage';
 import { GRADOS_INSTRUCCION, ESTADOS_CIVILES } from '../constants/formOptions';
-import { calcularEdad } from '../utils/generateHC';
 import { registrarPacienteConsolidado } from '../utils/supabaseHelpers';
 import { supabase } from '../supabaseClient';
+import { toTitleCase } from '../utils/formatters';
+import { isValidEmail, cleanDocument, isValidDni, isValidCE } from '../utils/validators';
+import { calcularEdad, isFutureDate } from '../utils/dateUtils';
 
 import countries from '../data/countries.json';
 import departamentos from '../data/ubigeo_peru_2016_departamentos.json';
 import provincias from '../data/ubigeo_peru_2016_provincias.json';
 import distritos from '../data/ubigeo_peru_2016_distritos.json';
-
-const toTitleCase = (value) => {
-  if (!value) return '';
-  return String(value)
-    .trim()
-    .toLowerCase()
-    .replace(/(?:^|[\s\-])\p{L}/gu, char => char.toUpperCase());
-};
-
-const isValidEmail = (email) => {
-  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-  return emailRegex.test(email);
-};
-
-
-const getFlagEmoji = (iso2) => {
-  if (!iso2) return '';
-  const codePoints = iso2
-    .toUpperCase()
-    .split('')
-    .map(char => 127397 + char.charCodeAt(0));
-  return String.fromCodePoint(...codePoints);
-};
-
-const FlagImage = ({ iso2, className = "w-5 h-3.5 object-cover rounded-sm border border-gray-200 shrink-0" }) => {
-  const [hasError, setHasError] = useState(false);
-  
-  if (!iso2) {
-    return <span className="text-base leading-none select-none">🌐</span>;
-  }
-  
-  if (hasError) {
-    const emoji = getFlagEmoji(iso2);
-    return <span className="text-base leading-none select-none">{emoji || '🌐'}</span>;
-  }
-  
-  const flagUrl = `https://purecatamphetamine.github.io/country-flag-icons/3x2/${iso2.toUpperCase()}.svg`;
-  return (
-    <img
-      src={flagUrl}
-      alt={iso2}
-      onError={() => setHasError(true)}
-      className={className}
-    />
-  );
-};
-
-const ComboBox = ({
-  options,
-  value,
-  onChange,
-  placeholder = 'Seleccione...',
-  searchable = false,
-  required = false,
-  disabled = false,
-  className = '',
-  id,
-  dropdownWidth
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const triggerRef = useRef(null);
-  const [coords, setCoords] = useState(null);
-
-  const selectedOption = options.find(opt => {
-    if (typeof opt === 'object') {
-      return opt.value === value;
-    }
-    return opt === value;
-  });
-
-  const getOptionLabel = (opt) => {
-    if (!opt) return '';
-    return typeof opt === 'object' ? opt.label : opt;
-  };
-
-  const getOptionValue = (opt) => {
-    if (!opt) return '';
-    return typeof opt === 'object' ? opt.value : opt;
-  };
-
-  const filteredOptions = searchable && search.trim() !== ''
-    ? options.filter(opt => {
-        if (typeof opt === 'object') {
-          const label = opt.label.toLowerCase();
-          const searchKey = opt.searchKey ? opt.searchKey.toLowerCase() : '';
-          return label.includes(search.toLowerCase()) || searchKey.includes(search.toLowerCase());
-        }
-        return opt.toLowerCase().includes(search.toLowerCase());
-      })
-    : options;
-
-  const updateCoords = () => {
-    if (triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      const scrollX = window.scrollX;
-      const scrollY = window.scrollY;
-      const windowWidth = window.innerWidth;
-      const maxDropdownW = dropdownWidth ? parseInt(dropdownWidth) : 360;
-      const estimatedWidth = Math.max(rect.width, Math.min(maxDropdownW, windowWidth * 0.9));
-      
-      let left = rect.left + scrollX;
-      if (rect.left + estimatedWidth > windowWidth) {
-        left = windowWidth - estimatedWidth - 16 + scrollX;
-      }
-      if (left < scrollX + 10) {
-        left = scrollX + 10;
-      }
-
-      setCoords({
-        top: rect.bottom + scrollY,
-        left,
-        width: rect.width
-      });
-    }
-  };
-
-  const handleToggle = () => {
-    if (disabled) return;
-    if (!isOpen) {
-      updateCoords();
-      setIsOpen(true);
-    } else {
-      setIsOpen(false);
-      setSearch('');
-      setCoords(null);
-    }
-  };
-
-  const handleSelect = (opt) => {
-    onChange(getOptionValue(opt));
-    setIsOpen(false);
-    setSearch('');
-    setCoords(null);
-  };
-
-  useEffect(() => {
-    if (isOpen) {
-      updateCoords();
-      window.addEventListener('resize', updateCoords);
-      window.addEventListener('scroll', updateCoords, true);
-      return () => {
-        window.removeEventListener('resize', updateCoords);
-        window.removeEventListener('scroll', updateCoords, true);
-      };
-    }
-  }, [isOpen]);
-
-  return (
-    <div className={`relative w-full ${isOpen ? 'z-[50]' : 'z-10'} ${className}`} id={id}>
-      <div
-        ref={triggerRef}
-        onClick={handleToggle}
-        className={`w-full px-4 bg-gray-50 border rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] h-[54px] flex items-center justify-between cursor-pointer select-none ${
-          disabled ? 'opacity-50 cursor-not-allowed bg-gray-200 text-gray-400 border-gray-200' : 'border-gray-200 hover:border-gray-300'
-        } ${isOpen ? 'border-[#003178] ring-1 ring-[#003178]/10' : ''}`}
-      >
-        <div className="flex items-center gap-2 truncate">
-          {selectedOption ? (
-            <>
-              {typeof selectedOption === 'object' && selectedOption.flag && (
-                <span className="inline-flex items-center shrink-0">
-                  {selectedOption.flag}
-                </span>
-              )}
-              <span className="truncate">{getOptionLabel(selectedOption)}</span>
-            </>
-          ) : (
-            <span className="text-gray-400 font-normal">{placeholder}</span>
-          )}
-        </div>
-        <span className="material-symbols-outlined text-gray-400 select-none">
-          {isOpen ? 'expand_less' : 'expand_more'}
-        </span>
-      </div>
-
-      {required && (
-        <input
-          type="text"
-          value={value || ''}
-          onChange={() => {}}
-          required
-          className="absolute inset-x-0 bottom-0 h-0 opacity-0 pointer-events-none"
-        />
-      )}
-
-      {isOpen && coords && createPortal(
-        <>
-          <div className="fixed inset-0 z-[99998]" onClick={() => { setIsOpen(false); setSearch(''); setCoords(null); }} />
-          <div
-            style={{
-              position: 'absolute',
-              top: `${coords.top}px`,
-              left: `${coords.left}px`,
-              minWidth: dropdownWidth ? undefined : `${coords.width}px`,
-              width: dropdownWidth || 'max-content',
-              maxWidth: dropdownWidth ? `min(${dropdownWidth}, 90vw)` : 'min(360px, 90vw)'
-            }}
-            className="bg-white border border-gray-200 rounded-2xl shadow-xl z-[99999] overflow-hidden flex flex-col max-h-64 transition-none animate-none"
-          >
-            {searchable && (
-              <div className="p-2 border-b border-gray-100 bg-gray-50/50 sticky top-0 z-10 flex items-center gap-2">
-                <span className="material-symbols-outlined text-gray-400 text-lg ml-2 select-none">search</span>
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Buscar..."
-                  className="w-full bg-transparent outline-none text-sm text-gray-700 py-1"
-                  autoFocus
-                />
-                {search && (
-                  <button type="button" onClick={() => setSearch('')} className="text-gray-400 hover:text-gray-600 px-1">
-                    <span className="material-symbols-outlined text-base">close</span>
-                  </button>
-                )}
-              </div>
-            )}
-            <div className="overflow-y-auto flex-1 py-1 max-h-48">
-              {filteredOptions.length > 0 ? (
-                filteredOptions.map((opt, idx) => {
-                  const optVal = getOptionValue(opt);
-                  const optLabel = getOptionLabel(opt);
-                  const isSelected = optVal === value;
-                  return (
-                    <div
-                      key={idx}
-                      onClick={() => handleSelect(opt)}
-                      className={`px-4 py-3 hover:bg-gray-50 text-sm cursor-pointer flex items-center justify-between gap-3 ${
-                        isSelected ? 'bg-blue-50/50 text-[#003178] font-bold' : 'text-gray-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
-                        {typeof opt === 'object' && opt.flag && (
-                          <span className="inline-flex items-center shrink-0">
-                            {opt.flag}
-                          </span>
-                        )}
-                        <span className="whitespace-normal break-words">{optLabel}</span>
-                      </div>
-                      {isSelected && (
-                        <span className="material-symbols-outlined text-[#003178] text-base shrink-0 select-none">check</span>
-                      )}
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="px-4 py-3 text-xs text-gray-450 text-center">No se encontraron resultados</div>
-              )}
-            </div>
-          </div>
-        </>,
-        document.body
-      )}
-    </div>
-  );
-};
 
 const OPTIONS_LUGAR_FAMILIA = [
   "Hijo único/a",
@@ -517,8 +264,20 @@ const RegisterModal = ({ isOpen, onClose }) => {
     const patientPhoneFull = patientPhoneNumber ? `${patientPhonePrefix} ${patientPhoneNumber.trim()}`.trim() : '';
     const proxyPhoneFull = proxyPhoneNumber ? `${proxyPhonePrefix} ${proxyPhoneNumber.trim()}`.trim() : '';
 
-    const finalPatientData = { ...patientData, telefono: patientPhoneFull };
-    const finalProxyData = { ...proxyData, telefono: proxyPhoneFull };
+    const finalPatientData = {
+      ...patientData,
+      nombres: toTitleCase(patientData.nombres),
+      apellidoPaterno: toTitleCase(patientData.apellidoPaterno),
+      apellidoMaterno: toTitleCase(patientData.apellidoMaterno),
+      telefono: patientPhoneFull
+    };
+    const finalProxyData = {
+      ...proxyData,
+      nombres: toTitleCase(proxyData.nombres),
+      apellidoPaterno: toTitleCase(proxyData.apellidoPaterno),
+      apellidoMaterno: toTitleCase(proxyData.apellidoMaterno),
+      telefono: proxyPhoneFull
+    };
 
     // Validar dirección obligatoria
     if (!finalPatientData.direccion || finalPatientData.direccion.trim() === '') {
@@ -551,8 +310,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
       return;
     }
 
-    const todayStr = getTodayDate();
-    if (finalPatientData.fechaNacimiento > todayStr) {
+    if (isFutureDate(finalPatientData.fechaNacimiento)) {
       setSubmitError('La fecha de nacimiento no puede ser una fecha futura.');
       return;
     }
@@ -565,18 +323,18 @@ const RegisterModal = ({ isOpen, onClose }) => {
     }
 
     // Validaciones de Documento del Paciente y Apoderado
-    const patientDniClean = String(finalPatientData.dni || '').replace(/\D/g, '');
-    const proxyDniClean = isProxy ? String(finalProxyData.dni || '').replace(/\D/g, '') : '';
+    const patientDniClean = cleanDocument(finalPatientData.dni);
+    const proxyDniClean = isProxy ? cleanDocument(finalProxyData.dni) : '';
 
     if (!patientDniClean) {
       setSubmitError('El documento del paciente es obligatorio.');
       return;
     }
-    if (finalPatientData.tipoDocumento === 'DNI' && patientDniClean.length !== 8) {
+    if (finalPatientData.tipoDocumento === 'DNI' && !isValidDni(patientDniClean)) {
       setSubmitError('El DNI del paciente debe tener exactamente 8 dígitos.');
       return;
     }
-    if (finalPatientData.tipoDocumento !== 'DNI' && (patientDniClean.length < 8 || patientDniClean.length > 12)) {
+    if (finalPatientData.tipoDocumento !== 'DNI' && !isValidCE(patientDniClean)) {
       setSubmitError('El Carnet de extranjería del paciente debe tener entre 8 y 12 dígitos.');
       return;
     }
@@ -593,7 +351,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
         return;
       }
       finalProxyData.tipoDocumento = proxyDniLen === 8 ? 'DNI' : 'Carnet de extranjería';
-      if (finalProxyData.fechaNacimiento > todayStr) {
+      if (isFutureDate(finalProxyData.fechaNacimiento)) {
         setSubmitError('La fecha de nacimiento del apoderado no puede ser una fecha futura.');
         return;
       }
@@ -846,6 +604,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                         placeholder="Nombres"
                         value={patientData.nombres}
                         onChange={(e) => handleNameChange('nombres', e.target.value, true)}
+                        onBlur={(e) => handlePatientChange('nombres', toTitleCase(e.target.value))}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px]"
                       />
                     </div>
@@ -857,6 +616,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                         placeholder="Apellido Paterno"
                         value={patientData.apellidoPaterno}
                         onChange={(e) => handleNameChange('apellidoPaterno', e.target.value, true)}
+                        onBlur={(e) => handlePatientChange('apellidoPaterno', toTitleCase(e.target.value))}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px]"
                       />
                     </div>
@@ -868,6 +628,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                         placeholder="Apellido Materno"
                         value={patientData.apellidoMaterno}
                         onChange={(e) => handleNameChange('apellidoMaterno', e.target.value, true)}
+                        onBlur={(e) => handlePatientChange('apellidoMaterno', toTitleCase(e.target.value))}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px]"
                       />
                     </div>
@@ -1119,6 +880,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                         placeholder="Nombres"
                         value={proxyData.nombres}
                         onChange={(e) => handleNameChange('nombres', e.target.value, false)}
+                        onBlur={(e) => handleProxyChange('nombres', toTitleCase(e.target.value))}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px] disabled:opacity-50"
                       />
                     </div>
@@ -1131,6 +893,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                         placeholder="Apellido Paterno"
                         value={proxyData.apellidoPaterno}
                         onChange={(e) => handleNameChange('apellidoPaterno', e.target.value, false)}
+                        onBlur={(e) => handleProxyChange('apellidoPaterno', toTitleCase(e.target.value))}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px] disabled:opacity-50"
                       />
                     </div>
@@ -1143,6 +906,7 @@ const RegisterModal = ({ isOpen, onClose }) => {
                         placeholder="Apellido Materno"
                         value={proxyData.apellidoMaterno}
                         onChange={(e) => handleNameChange('apellidoMaterno', e.target.value, false)}
+                        onBlur={(e) => handleProxyChange('apellidoMaterno', toTitleCase(e.target.value))}
                         className="w-full px-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none text-sm text-gray-750 focus:border-[#003178] transition-colors h-[54px] disabled:opacity-50"
                       />
                     </div>

@@ -1,7 +1,12 @@
+// Profile page for managing user account information and clinical history
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
+import ComboBox from '../components/ComboBox';
+import { FlagImage, getFlagEmoji } from '../components/FlagImage';
 import { usePacienteActual } from '../hooks/usePacienteActual';
 import { registrarPaciente, actualizarPaciente } from '../utils/supabaseHelpers';
+import { toTitleCase } from '../utils/formatters';
 import { supabase } from '../supabaseClient';
 import { GRADOS_INSTRUCCION, ESTADOS_CIVILES } from '../constants/formOptions';
 
@@ -10,37 +15,6 @@ import departamentos from '../data/ubigeo_peru_2016_departamentos.json';
 import provincias from '../data/ubigeo_peru_2016_provincias.json';
 import distritos from '../data/ubigeo_peru_2016_distritos.json';
 
-const getFlagEmoji = (iso2) => {
-  if (!iso2) return '';
-  const codePoints = iso2
-    .toUpperCase()
-    .split('')
-    .map(char => 127397 + char.charCodeAt(0));
-  return String.fromCodePoint(...codePoints);
-};
-
-const FlagImage = ({ iso2, className = "w-5 h-3.5 object-cover rounded-sm border border-gray-200 shrink-0" }) => {
-  const [hasError, setHasError] = useState(false);
-  
-  if (!iso2) {
-    return <span className="text-base leading-none select-none">🌐</span>;
-  }
-  
-  if (hasError) {
-    const emoji = getFlagEmoji(iso2);
-    return <span className="text-base leading-none select-none">{emoji || '🌐'}</span>;
-  }
-  
-  const flagUrl = `https://purecatamphetamine.github.io/country-flag-icons/3x2/${iso2.toUpperCase()}.svg`;
-  return (
-    <img
-      src={flagUrl}
-      alt={iso2}
-      onError={() => setHasError(true)}
-      className={className}
-    />
-  );
-};
 
 
 const parseTelefono = (telString) => {
@@ -188,13 +162,7 @@ const Profile = ({ onNavigate }) => {
     setSubmitError('');
     setSaving(true);
 
-    const toTitleCase = (value) => {
-      if (!value) return value;
-      return String(value)
-        .trim()
-        .toLowerCase()
-        .replace(/\b\p{L}/gu, char => char.toUpperCase());
-    };
+
 
     try {
       // Validaciones obligatorias
@@ -310,7 +278,7 @@ const Profile = ({ onNavigate }) => {
         if (!res.success) throw new Error(res.error || 'Error al crear la ficha clínica.');
       }
 
-      alert('Datos de perfil actualizados exitosamente.');
+      toast.success('Datos de perfil actualizados exitosamente.');
       setIsEditing(false);
       refetch();
     } catch (err) {
@@ -353,6 +321,13 @@ const Profile = ({ onNavigate }) => {
 
   // Prefijo flag actual
   const prefixObj = countries.find(c => `+${c.phoneCode}` === phonePrefix);
+
+  const countryOptions = countries.map(c => ({
+    value: c.nameES,
+    label: c.nameES,
+    flag: <FlagImage iso2={c.iso2} />,
+    searchKey: c.nameES
+  }));
 
   return (
     <DashboardLayout currentPath="/dashboard/profile" onNavigate={onNavigate}>
@@ -530,17 +505,14 @@ const Profile = ({ onNavigate }) => {
                       <div>
                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">País *</label>
                         {isEditing ? (
-                          <select
+                          <ComboBox
+                            required
+                            searchable
+                            options={countryOptions}
                             value={clinicalData.pais}
-                            onChange={e => handleCountryChange(e.target.value)}
-                            className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none text-gray-700 bg-white"
-                          >
-                            {countries.map(c => (
-                              <option key={c.iso2} value={c.nameES}>
-                                {getFlagEmoji(c.iso2)} {c.nameES}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={handleCountryChange}
+                            placeholder="Seleccione país"
+                          />
                         ) : (
                           <p className="p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm text-gray-700 flex items-center gap-2">
                             <FlagImage iso2={countryObj?.iso2} />

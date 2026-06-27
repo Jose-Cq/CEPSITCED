@@ -1,19 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { cerrarSesion } from '../../utils/supabaseHelpers';
+import ConfirmModal from '../ConfirmModal';
 
 const TopBar = ({ userName = 'Patient', userAvatar, onMenuClick }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const location = useLocation();
   const dropdownRef = useRef(null);
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     setDropdownOpen(false);
-    const confirmar = window.confirm('¿Estás seguro de que deseas cerrar sesión?');
-    if (confirmar) {
-      await cerrarSesion();
-      window.location.href = '/';
-    }
+    setShowLogoutConfirm(true);
+  };
+
+  const confirmarCierreSesion = async () => {
+    setShowLogoutConfirm(false);
+    await cerrarSesion();
+    window.location.href = '/';
   };
 
   // Cerrar el menú desplegable al hacer clic fuera del componente
@@ -86,6 +90,17 @@ const TopBar = ({ userName = 'Patient', userAvatar, onMenuClick }) => {
           )}
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={showLogoutConfirm}
+        title="Cerrar Sesión"
+        message="¿Estás seguro de que deseas cerrar sesión en el portal?"
+        confirmText="Cerrar sesión"
+        cancelText="Cancelar"
+        variant="primary"
+        onConfirm={confirmarCierreSesion}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
     </header>
   );
 };

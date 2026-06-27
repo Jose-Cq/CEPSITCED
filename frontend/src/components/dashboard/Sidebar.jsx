@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { cerrarSesion } from '../../utils/supabaseHelpers';
+import ConfirmModal from '../ConfirmModal';
 
 const menuItems = [
   { id: 'dashboard', icon: 'dashboard', label: 'Dashboard', path: '/dashboard' },
@@ -18,6 +19,7 @@ const Sidebar = ({ currentPath, onNavigate, onBookAppointment, isMobile = false 
   const navigate = useNavigate();
   const location = useLocation();
   const currentRoute = currentPath || location.pathname;
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const isActive = (path) => {
     if (path === '/dashboard' && currentRoute === '/dashboard') return true;
@@ -36,13 +38,14 @@ const Sidebar = ({ currentPath, onNavigate, onBookAppointment, isMobile = false 
     }
   };
 
-  const handleLogout = async () => {
-    const confirmar = window.confirm('¿Estás seguro de que deseas cerrar sesión?');
-    if (confirmar) {
-      await cerrarSesion();
-      // Redirigir a la landing page
-      window.location.href = '/';
-    }
+  const handleLogout = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const confirmarCierreSesion = async () => {
+    setShowLogoutConfirm(false);
+    await cerrarSesion();
+    window.location.href = '/';
   };
 
   const handleBookAppointment = () => {
@@ -123,6 +126,17 @@ const Sidebar = ({ currentPath, onNavigate, onBookAppointment, isMobile = false 
           </button>
         ))}
       </div>
+
+      <ConfirmModal
+        isOpen={showLogoutConfirm}
+        title="Cerrar Sesión"
+        message="¿Estás seguro de que deseas cerrar sesión en el portal?"
+        confirmText="Cerrar sesión"
+        cancelText="Cancelar"
+        variant="primary"
+        onConfirm={confirmarCierreSesion}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
     </aside>
   );
 };

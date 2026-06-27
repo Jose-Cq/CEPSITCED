@@ -10,14 +10,16 @@ const cleanString = (val) => {
   return trimmed
 }
 
-const supabaseUrl = cleanString(rawUrl) || 'https://qmclfjialccotbjgoqja.supabase.co'
-const supabaseAnonKey = cleanString(rawKey) || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFtY2xmamlhbGNjb3RiamdvcWphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczMTA3NTYsImV4cCI6MjA5Mjg4Njc1Nn0.m2ByvM4clnwMDPKYdxX4qaUG0fAhQI3ROXhzX3RxAGk'
+const supabaseUrl = cleanString(rawUrl)
+const supabaseAnonKey = cleanString(rawKey)
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error(
+    'Error crítico: No se encontraron las variables de entorno de Supabase (VITE_SUPABASE_URL y/o VITE_SUPABASE_ANON_KEY) en el frontend.'
+  )
+}
 
 console.log('--- Supabase Connection Status ---')
-console.log('URL Supabase configurada:', !!cleanString(rawUrl))
-console.log('KEY Supabase configurada:', !!cleanString(rawKey))
-if (!cleanString(rawUrl) || !cleanString(rawKey)) {
-  console.warn('Usando valores de fallback predeterminados para Supabase.')
-}
+console.log('URL Supabase configurada correctamente a través de variables de entorno.')
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)

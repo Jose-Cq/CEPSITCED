@@ -1,8 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { usePacienteActual } from '../hooks/usePacienteActual';
-import { obtenerCitasPaciente, cancelarCita } from '../utils/supabaseHelpers';
+import { obtenerCitasPaciente, cancelarCita, obtenerMetodosPagoClinica } from '../utils/supabaseHelpers';
+import { supabase } from '../supabaseClient';
+import ConfirmModal from '../components/ConfirmModal';
 
 const Appointments = ({ onNavigate }) => {
   const location = useLocation();
@@ -16,24 +19,36 @@ const Appointments = ({ onNavigate }) => {
   const [error, setError] = useState('');
   const [selectedCita, setSelectedCita] = useState(null);
   const [activeTab, setActiveTab] = useState('activas');
+  const [citaIdParaCancelar, setCitaIdParaCancelar] = useState(null);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [metodosPagoClinica, setMetodosPagoClinica] = useState([]);
+  const [loadingMetodosPago, setLoadingMetodosPago] = useState(false);
 
-  const handleCancelarCita = async (citaId) => {
-    const confirm = window.confirm('¿Estás seguro de que deseas cancelar esta cita?');
-    if (!confirm) return;
+  const handleCancelarCita = (citaId) => {
+    setCitaIdParaCancelar(citaId);
+    setShowCancelConfirm(true);
+  };
+
+  const confirmarCancelacionCita = async () => {
+    if (!citaIdParaCancelar) return;
+    const citaId = citaIdParaCancelar;
+    setShowCancelConfirm(false);
+    setCitaIdParaCancelar(null);
 
     try {
       const res = await cancelarCita(citaId);
       if (res.success) {
-        alert('Cita cancelada correctamente.');
+        toast.success('Cita cancelada correctamente.');
         setAppointments(prev =>
           prev.map(c => (c.id === citaId ? { ...c, estado_cita: 'Cancelada' } : c))
         );
       } else {
-        alert('Error al cancelar la cita: ' + res.error);
+        toast.error('Error al cancelar la cita: ' + res.error);
       }
     } catch (err) {
       console.error(err);
-      alert('Error de conexión al cancelar la cita.');
+      toast.error('Error de conexión al cancelar la cita.');
     }
   };
 
@@ -106,9 +121,9 @@ const Appointments = ({ onNavigate }) => {
     let list = displayAppointments;
 
     if (activeTab === 'activas') {
-      list = list.filter(cita => ['Pendiente', 'Confirmada', 'Reprogramada'].includes(cita.estado_cita));
+      list = list.filter(cita => ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'].includes(cita.estado_cita));
     } else if (activeTab === 'completadas') {
-      list = list.filter(cita => ['Realizada', 'Completada'].includes(cita.estado_cita));
+      list = list.filter(cita => ['Realizada', 'Completada', 'Atendida', 'Ausente'].includes(cita.estado_cita));
     } else if (activeTab === 'canceladas') {
       list = list.filter(cita => ['Cancelada'].includes(cita.estado_cita));
     }
@@ -142,12 +157,27 @@ const Appointments = ({ onNavigate }) => {
   };
 
   const ahora = new Date();
-  const ESTADOS_ACTIVOS = ['Pendiente', 'Confirmada', 'Reprogramada'];
+  const hoyStr = new Date().toISOString().split('T')[0];
+  const ESTADOS_ACTIVOS = ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'];
   const proximaCita = displayAppointments
     .filter(cita => new Date(`${cita.fecha_cita}T${cita.hora_inicio}`) > ahora && ESTADOS_ACTIVOS.includes(cita.estado_cita))
     .sort((a, b) => new Date(`${a.fecha_cita}T${a.hora_inicio}`) - new Date(`${b.fecha_cita}T${b.hora_inicio}`))[0];
 
   // Función para mostrar el estado de pago con estilos
+  const handleOpenPaymentModal = async () => {
+    setLoadingMetodosPago(true);
+    setShowPaymentModal(true);
+    try {
+      const res = await obtenerMetodosPagoClinica();
+      if (res) setMetodosPagoClinica(res);
+    } catch (err) {
+      console.error('Error al cargar métodos de pago:', err);
+      setMetodosPagoClinica([]);
+    } finally {
+      setLoadingMetodosPago(false);
+    }
+  };
+
   const getPaymentBadge = (estado) => {
     const badges = {
       Pendiente: { bg: 'bg-yellow-50', text: 'text-yellow-800', border: 'border-yellow-200', dot: 'bg-yellow-500' },
@@ -163,19 +193,31 @@ const Appointments = ({ onNavigate }) => {
     );
   };
 
+  // Mapeo de estados internos que no deben mostrarse textualmente al paciente
+  const ESTADOS_OCULTOS_PACIENTE = {
+    'En consulta': 'Confirmada'
+  };
+
+  const getEstadoDisplay = (estado) => {
+    return ESTADOS_OCULTOS_PACIENTE[estado] || estado;
+  };
+
   const getCitaStateBadge = (estado) => {
+    const displayEstado = getEstadoDisplay(estado);
     const badges = {
       Pendiente: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
       Confirmada: { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200' },
       Realizada: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-200' },
       Completada: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-200' },
+      Atendida: { bg: 'bg-teal-50', text: 'text-teal-800', border: 'border-teal-200' },
       Cancelada: { bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-200' },
+      Ausente: { bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-200' },
       Reprogramada: { bg: 'bg-purple-50', text: 'text-purple-800', border: 'border-purple-200' },
     };
-    const style = badges[estado] || badges.Pendiente;
+    const style = badges[displayEstado] || badges.Pendiente;
     return (
       <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium border ${style.bg} ${style.text} ${style.border} capitalize`}>
-        {estado}
+        {displayEstado}
       </span>
     );
   };
@@ -224,94 +266,146 @@ const Appointments = ({ onNavigate }) => {
 
           {!loading && !currentError && (
             <>
-              {proximaCita ? (
-                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,760px)_260px] gap-6 mb-12 animate-fade-in-up w-full min-w-0 items-stretch">
-                  <div className="bg-white text-gray-900 rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col justify-between min-w-0">
-                    <div className="bg-gray-50 px-6 py-3 border-b border-gray-100 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[#003178]">event_upcoming</span>
-                        <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700">Próxima Cita</h3>
-                      </div>
-                      <div>
-                        {getCitaStateBadge(proximaCita.estado_cita)}
-                      </div>
-                    </div>
-                    <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
-                      <div className="space-y-2.5 min-w-0">
-                        <div className="min-w-0">
-                          <p className="text-[10px] text-gray-400 uppercase font-semibold">Servicio</p>
-                          <p className="text-sm font-bold text-[#003178] break-words whitespace-normal leading-tight">{proximaCita.servicio}</p>
+              <div className="mb-12 animate-fade-in-up w-full min-w-0">
+                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] gap-6 items-stretch">
+
+                  {proximaCita ? (
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-md overflow-hidden flex flex-col min-w-0">
+                      <div className="bg-[#003178] px-6 py-3 flex items-center justify-between shrink-0">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-white">event_upcoming</span>
+                          <h3 className="font-bold text-xs uppercase tracking-wider text-white">Próxima Cita</h3>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-[10px] text-gray-400 uppercase font-semibold">Especialista</p>
-                          <p className="text-xs font-bold text-gray-800 break-words whitespace-normal leading-tight">{proximaCita.psicologa_nombre || 'Especialista'}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[10px] text-gray-400 uppercase font-semibold">Modalidad</p>
-                          <p className="text-xs font-bold text-gray-700 capitalize flex items-center flex-wrap gap-1 mt-0.5 break-words whitespace-normal leading-tight">
-                            <span className="material-symbols-outlined text-base text-gray-400">{proximaCita.modalidad === 'Virtual' ? 'videocam' : 'storefront'}</span>
-                            {proximaCita.modalidad}
-                          </p>
+                        <div>
+                          {getCitaStateBadge(proximaCita.estado_cita)}
                         </div>
                       </div>
-                      <div className="space-y-2.5 lg:text-right flex flex-col justify-between items-start lg:items-end min-w-0">
-                        <div className="w-full min-w-0">
-                          <p className="text-[10px] text-gray-400 uppercase font-semibold">Fecha y Hora</p>
-                          <p className="text-sm font-bold text-gray-900 mt-0.5 break-words whitespace-normal leading-tight">
-                            {new Date(proximaCita.fecha_cita + 'T00:00:00').toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' })}
-                          </p>
-                          <p className="text-xs text-gray-550 font-bold mt-0.5 break-words whitespace-normal leading-tight">{proximaCita.hora_inicio?.slice(0, 5)} - {proximaCita.hora_fin?.slice(0, 5)}</p>
-                        </div>
-                        <div className="w-full min-w-0">
-                          <p className="text-[10px] text-gray-400 uppercase font-semibold">Paciente</p>
-                          <p className="text-xs text-gray-900 font-bold mt-0.5 break-words whitespace-normal leading-tight">{proximaCita.paciente_nombre}</p>
-                        </div>
-                      </div>
-                      <div className="col-span-1 lg:col-span-2 pt-3 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 min-w-0">
-                        <div className="text-[11px] text-gray-500 leading-relaxed min-w-0 w-full sm:w-auto break-words whitespace-normal">
-                          {proximaCita.modalidad === 'Virtual' ? (
-                            <p className="italic">Atención virtual</p>
-                          ) : (
+                      <div className="flex-1 p-6 flex flex-col justify-between min-w-0 gap-4">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          <div className="space-y-3 min-w-0">
                             <div className="min-w-0">
-                              <p className="font-semibold text-gray-600 break-words whitespace-normal">Local: <span className="font-normal text-gray-500">{proximaCita.habitaciones?.locales?.nombre || 'Sede Central'}</span></p>
-                              <p className="font-semibold text-gray-600 break-words whitespace-normal">Consultorio: <span className="font-normal text-gray-500">{proximaCita.habitaciones?.nombre || 'Consultorio Principal'}</span></p>
-                              {proximaCita.habitaciones?.locales?.direccion && (
-                                <p className="font-semibold text-gray-600 break-words whitespace-normal">Dirección: <span className="font-normal text-gray-555">{proximaCita.habitaciones.locales.direccion}</span></p>
-                              )}
+                              <p className="text-[10px] text-gray-400 uppercase font-semibold">Servicio</p>
+                              <p className="text-sm font-bold text-[#003178] break-words whitespace-normal leading-tight">{proximaCita.servicio}{proximaCita.numero_sesion ? <span className="ml-1 text-xs font-semibold text-gray-500">— Sesión #{proximaCita.numero_sesion}</span> : ''}</p>
                             </div>
-                          )}
+                            <div className="min-w-0">
+                              <p className="text-[10px] text-gray-400 uppercase font-semibold">Especialista</p>
+                              <p className="text-xs font-bold text-gray-800 break-words whitespace-normal leading-tight">{proximaCita.psicologa_nombre || 'Especialista'}</p>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[10px] text-gray-400 uppercase font-semibold">Modalidad</p>
+                              <p className="text-xs font-bold text-gray-700 capitalize flex items-center flex-wrap gap-1 mt-0.5 break-words whitespace-normal leading-tight">
+                                <span className="material-symbols-outlined text-base text-gray-400">{proximaCita.modalidad === 'Virtual' ? 'videocam' : 'storefront'}</span>
+                                {proximaCita.modalidad}
+                                {proximaCita.paquete_id && (
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                    <span className="material-symbols-outlined text-[11px]">confirmation_number</span>
+                                    Prepago
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="space-y-3 lg:text-right flex flex-col justify-between items-start lg:items-end min-w-0">
+                            <div className="w-full min-w-0">
+                              <p className="text-[10px] text-gray-400 uppercase font-semibold">Fecha y Hora</p>
+                              <p className="text-sm font-bold text-gray-900 mt-0.5 break-words whitespace-normal leading-tight">
+                                {new Date(proximaCita.fecha_cita + 'T00:00:00').toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' })}
+                              </p>
+                              <p className="text-xs text-gray-550 font-bold mt-0.5 break-words whitespace-normal leading-tight">{proximaCita.hora_inicio?.slice(0, 5)} - {proximaCita.hora_fin?.slice(0, 5)}</p>
+                            </div>
+                            <div className="w-full min-w-0">
+                              <p className="text-[10px] text-gray-400 uppercase font-semibold">Paciente</p>
+                              <p className="text-xs text-gray-900 font-bold mt-0.5 break-words whitespace-normal leading-tight">{proximaCita.paciente_nombre}</p>
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-start sm:justify-end">
-                          <button
-                            onClick={() => setSelectedCita(proximaCita)}
-                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-4 py-2 rounded-lg transition-colors cursor-pointer w-full sm:w-auto text-center whitespace-nowrap"
-                          >
-                            Ver Detalles
-                          </button>
-                          {['Pendiente', 'Confirmada', 'Reprogramada'].includes(proximaCita.estado_cita) && (
+                        <div className="pt-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 min-w-0">
+                          <div className="text-[11px] text-gray-500 leading-relaxed min-w-0 w-full sm:w-auto break-words whitespace-normal">
+                            {proximaCita.modalidad === 'Virtual' ? (
+                              <p className="italic">Atención virtual</p>
+                            ) : (
+                              <div className="min-w-0">
+                                <p className="font-semibold text-gray-600 break-words whitespace-normal">Local: <span className="font-normal text-gray-500">{proximaCita.habitaciones?.locales?.nombre || 'Sede Central'}</span></p>
+                                <p className="font-semibold text-gray-600 break-words whitespace-normal">Consultorio: <span className="font-normal text-gray-500">{proximaCita.habitaciones?.nombre || 'Consultorio Principal'}</span></p>
+                                {proximaCita.habitaciones?.locales?.direccion && (
+                                  <p className="font-semibold text-gray-600 break-words whitespace-normal">Dirección: <span className="font-normal text-gray-555">{proximaCita.habitaciones.locales.direccion}</span></p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex flex-row items-center justify-end gap-2">
                             <button
-                              onClick={() => handleCancelarCita(proximaCita.id)}
-                              className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs px-4 py-2 rounded-lg transition-colors cursor-pointer w-full sm:w-auto text-center whitespace-nowrap"
+                              onClick={() => setSelectedCita(proximaCita)}
+                              className="inline-flex items-center justify-center h-[36px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-4 rounded-lg transition-colors cursor-pointer whitespace-nowrap"
                             >
-                              Cancelar
+                              Ver Detalles
                             </button>
-                          )}
+                            {proximaCita.modalidad === 'Virtual' && (proximaCita.link_reunion && proximaCita.link_reunion.trim() !== '' ? (
+                              <a
+                                href={proximaCita.link_reunion}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center justify-center gap-1.5 h-[36px] px-4 bg-green-600 hover:bg-green-700 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">videocam</span>
+                                Unirse
+                              </a>
+                            ) : (
+                              <span className="inline-flex items-center justify-center gap-1.5 h-[36px] px-4 bg-gray-100 text-gray-400 font-bold text-xs rounded-lg cursor-not-allowed select-none whitespace-nowrap">
+                                <span className="material-symbols-outlined text-[16px]">videocam</span>
+                                Pendiente
+                              </span>
+                            ))}
+                            {['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'].includes(proximaCita.estado_cita) && (
+                              <button
+                                onClick={() => handleCancelarCita(proximaCita.id)}
+                                className="inline-flex items-center justify-center h-[36px] px-4 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap"
+                              >
+                                Cancelar
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
+                  ) : (
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-md p-8 text-center text-gray-500 flex flex-col items-center justify-center min-h-[200px]">
+                      <span className="material-symbols-outlined text-gray-300 text-4xl mb-2">event_busy</span>
+                      <p className="font-semibold text-gray-600">No tienes citas próximas.</p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-md flex flex-col items-center justify-center text-center group cursor-pointer transition-all duration-300 hover:bg-[#003178]">
+                      <span className="material-symbols-outlined text-[#003178] group-hover:text-white text-[24px] mb-1 transition-colors duration-300">event_note</span>
+                      <p className="text-xl font-bold text-gray-900 group-hover:text-white transition-colors duration-300">
+                        {appointments.filter(cita => cita.fecha_cita >= hoyStr && ESTADOS_ACTIVOS.includes(cita.estado_cita)).length}
+                      </p>
+                      <p className="text-[10px] font-semibold text-slate-500 group-hover:text-white/80 uppercase tracking-wider mt-0.5 transition-colors duration-300">Próximas</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-md flex flex-col items-center justify-center text-center group cursor-pointer transition-all duration-300 hover:bg-[#003178]">
+                      <span className="material-symbols-outlined text-green-600 group-hover:text-white text-[24px] mb-1 transition-colors duration-300">check_circle</span>
+                      <p className="text-xl font-bold text-gray-900 group-hover:text-white transition-colors duration-300">
+                        {appointments.filter(cita => ['Realizada', 'Completada', 'Atendida'].includes(cita.estado_cita)).length}
+                      </p>
+                      <p className="text-[10px] font-semibold text-slate-500 group-hover:text-white/80 uppercase tracking-wider mt-0.5 transition-colors duration-300">Completadas</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-md flex flex-col items-center justify-center text-center group cursor-pointer transition-all duration-300 hover:bg-[#003178]">
+                      <span className="material-symbols-outlined text-red-500 group-hover:text-white text-[24px] mb-1 transition-colors duration-300">cancel</span>
+                      <p className="text-xl font-bold text-gray-900 group-hover:text-white transition-colors duration-300">
+                        {appointments.filter(cita => ['Cancelada', 'Reprogramada'].includes(cita.estado_cita)).length}
+                      </p>
+                      <p className="text-[10px] font-semibold text-slate-500 group-hover:text-white/80 uppercase tracking-wider mt-0.5 transition-colors duration-300">Canceladas / Repro.</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-md flex flex-col items-center justify-center text-center group cursor-pointer transition-all duration-300 hover:bg-[#003178]">
+                      <span className="material-symbols-outlined text-purple-600 group-hover:text-white text-[24px] mb-1 transition-colors duration-300">bar_chart</span>
+                      <p className="text-xl font-bold text-gray-900 group-hover:text-white transition-colors duration-300">{appointments.length}</p>
+                      <p className="text-[10px] font-semibold text-slate-500 group-hover:text-white/80 uppercase tracking-wider mt-0.5 transition-colors duration-300">Total Sesiones</p>
+                    </div>
                   </div>
-                  <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm flex flex-col justify-center items-center text-center">
-                    <span className="material-symbols-outlined text-gray-400 mb-3 text-4xl">history</span>
-                    <p className="text-4xl font-bold text-gray-900 mb-1">{displayAppointments.length}</p>
-                    <h3 className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Total Sesiones</h3>
-                  </div>
+
                 </div>
-              ) : (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center text-gray-500 text-sm mb-12 flex flex-col items-center justify-center">
-                  <span className="material-symbols-outlined text-gray-300 text-4xl mb-2">event_busy</span>
-                  <p className="font-semibold text-gray-600">No tienes citas próximas.</p>
-                </div>
-              )}
+              </div>
 
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-fade-in-up w-full max-w-full">
                 <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-gray-50/50 w-full max-w-full">
@@ -319,7 +413,7 @@ const Appointments = ({ onNavigate }) => {
                   <div className="w-full sm:w-auto overflow-x-auto">
                     <div className="flex gap-2 min-w-max p-1 bg-gray-100/80 rounded-xl border border-gray-200/40">
                       {[
-                        { id: 'activas', label: 'Activas' },
+                        { id: 'activas', label: 'Pendientes' },
                         { id: 'completadas', label: 'Completadas' },
                         { id: 'canceladas', label: 'Canceladas' },
                         { id: 'todas', label: 'Todas' }
@@ -345,73 +439,102 @@ const Appointments = ({ onNavigate }) => {
                 <div className="w-full max-w-full overflow-hidden">
                   <div className="hidden lg:block w-full max-w-full overflow-hidden">
                     <div className="overflow-x-auto max-w-full">
-                      <table className="w-full min-w-[760px] text-left border-collapse">
+                      <table className="w-full min-w-[800px] text-center border-collapse">
                         <thead>
                           <tr className="bg-gray-50/30 border-b border-gray-100">
-                            <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Paciente (Miembro)</th>
-                            <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Especialista</th>
-                            <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Servicio</th>
-                            <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Fecha y Hora</th>
-                            <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado Cita</th>
-                            <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado Pago</th>
+                            <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Paciente</th>
+                            <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Especialista</th>
+                            <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Servicio</th>
+                            <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Fecha y Hora</th>
+                            <th className="py-4 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Estado Cita</th>
+                            <th className="py-4 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center"></th>
+                            <th className="py-4 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Estado Pago</th>
                             <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Acciones</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {filteredAppointments.length === 0 ? (
                             <tr>
-                              <td colSpan="7" className="text-center py-12 text-slate-400 text-sm font-medium">
+                              <td colSpan="8" className="text-center py-12 text-slate-400 text-sm font-medium">
                                 {getEmptyMessage()}
                               </td>
                             </tr>
                           ) : (
                             filteredAppointments.map((cita) => (
                               <tr key={cita.id} className="hover:bg-gray-50/50 transition-colors">
-                                <td className="py-4 px-6">
+                                <td className="py-4 px-6 text-center">
                                   <span className="text-gray-900 font-bold text-sm">{cita.paciente_nombre}</span>
                                 </td>
-                                <td className="py-4 px-6">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-full bg-blue-100 text-[#003178] flex items-center justify-center text-sm font-bold">
-                                      {cita.psicologa_nombre?.charAt(0) || 'E'}
-                                    </div>
-                                    <span className="text-gray-900 font-medium text-sm">{cita.psicologa_nombre || 'Especialista'}</span>
-                                  </div>
+                                <td className="py-4 px-6 text-center">
+                                  <span className="text-gray-900 font-medium text-sm">{cita.psicologa_nombre || 'Especialista'}</span>
                                 </td>
-                                <td className="py-4 px-6 text-gray-600 text-sm">{cita.servicio}</td>
-                                <td className="py-4 px-6 text-sm">
+                                <td className="py-4 px-6 text-center text-gray-600 text-sm">{cita.servicio}{cita.numero_sesion ? <span className="ml-1 text-[11px] text-gray-400 font-semibold">#S{cita.numero_sesion}</span> : ''}</td>
+                                <td className="py-4 px-6 text-center text-sm">
                                   <span className="text-gray-900 font-medium">
                                     {new Date(cita.fecha_cita + 'T00:00:00').toLocaleDateString('es-PE')}
                                   </span>
-                                  <br />
-                                  <span className="text-xs text-gray-550 font-semibold">{cita.hora_inicio?.slice(0, 5)} - {cita.hora_fin?.slice(0, 5)}</span>
-                                  <br />
-                                  <span className="text-[11px] text-[#003178] font-bold capitalize">
-                                    {cita.modalidad} {cita.modalidad === 'Virtual' ? '(Virtual)' : ` - ${cita.habitaciones?.locales?.nombre || 'Sede Central'}`}
-                                  </span>
+                                  <div className="mt-1">
+                                    <span className="text-xs text-gray-550 font-semibold">{cita.hora_inicio?.slice(0, 5)} - {cita.hora_fin?.slice(0, 5)}</span>
+                                  </div>
+                                  <div className="mt-1">
+                                    <span className="text-[11px] text-[#003178] font-bold capitalize">
+                                      {cita.modalidad === 'Virtual' ? 'Virtual' : `Presencial - ${cita.habitaciones?.locales?.nombre || 'Sede Central'}`}
+                                    </span>
+                                  </div>
                                 </td>
-                                <td className="py-4 px-6">
+                                <td className="py-4 px-3 text-center">
                                   {getCitaStateBadge(cita.estado_cita)}
                                 </td>
-                                <td className="py-4 px-6">{getPaymentBadge(cita.estado_pago)}</td>
-                                <td className="py-4 px-6 text-center">
-                                  <div className="flex items-center justify-center gap-2 whitespace-nowrap">
+                                <td className="py-4 px-3 text-center align-middle">
+                                  {cita.estado_pago === 'Pendiente' && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleOpenPaymentModal(); }}
+                                      className="inline-flex items-center justify-center w-8 h-8 rounded-full text-[#003178] hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-all duration-200 cursor-pointer"
+                                      title="Ver métodos de pago"
+                                    >
+                                      <span className="material-symbols-outlined text-[18px]">credit_card</span>
+                                    </button>
+                                  )}
+                                </td>
+                                <td className="py-4 px-3 text-center">{getPaymentBadge(cita.estado_pago)}</td>
+                                <td className="py-4 px-6 text-center align-middle">
+                                  <div className="flex flex-row items-center justify-center gap-3">
                                     <button
                                       onClick={() => setSelectedCita(cita)}
-                                      className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-[#003178] transition-colors cursor-pointer"
+                                      className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-gray-500 hover:text-[#003178] hover:bg-gray-100 transition-all duration-200 cursor-pointer"
                                       title="Ver Detalles"
                                     >
-                                      <span className="material-symbols-outlined text-[20px]">visibility</span>
+                                      <span className="material-symbols-outlined text-[20px] leading-none">visibility</span>
                                     </button>
-                                    {['Pendiente', 'Confirmada', 'Reprogramada'].includes(cita.estado_cita) && (
-                                      <button
-                                        onClick={() => handleCancelarCita(cita.id)}
-                                        className="p-1.5 hover:bg-red-50 rounded-lg text-gray-500 hover:text-red-650 transition-colors cursor-pointer"
-                                        title="Cancelar Cita"
+                                    {cita.modalidad === 'Virtual' && (cita.link_reunion && cita.link_reunion.trim() !== '' ? (
+                                      <a
+                                        href={cita.link_reunion}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-gray-500 hover:text-green-700 hover:bg-green-100 transition-all duration-200 cursor-pointer"
+                                        title="Unirse a la sesión virtual"
                                       >
-                                        <span className="material-symbols-outlined text-[20px]">cancel</span>
-                                      </button>
-                                    )}
+                                        <span className="material-symbols-outlined text-[20px] leading-none">videocam</span>
+                                      </a>
+                                    ) : (
+                                      <span
+                                        className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-gray-200 cursor-not-allowed select-none"
+                                        title="Enlace de reunión pendiente"
+                                      >
+                                        <span className="material-symbols-outlined text-[20px] leading-none">videocam</span>
+                                      </span>
+                                    ))}
+                                    <button
+                                      onClick={() => ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'].includes(cita.estado_cita) ? handleCancelarCita(cita.id) : null}
+                                      className={`inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all duration-200 ${
+                                        ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'].includes(cita.estado_cita)
+                                          ? 'text-gray-500 hover:text-red-650 hover:bg-red-50 cursor-pointer'
+                                          : 'text-gray-200 cursor-not-allowed'
+                                      }`}
+                                      title={['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'].includes(cita.estado_cita) ? 'Cancelar Cita' : 'No se puede cancelar'}
+                                    >
+                                      <span className="material-symbols-outlined text-[20px] leading-none">cancel</span>
+                                    </button>
                                   </div>
                                 </td>
                               </tr>
@@ -442,7 +565,7 @@ const Appointments = ({ onNavigate }) => {
                           <div className="grid grid-cols-2 gap-3 text-xs">
                             <div>
                               <p className="text-[10px] text-gray-400 uppercase font-semibold">Servicio</p>
-                              <p className="font-semibold text-gray-800 leading-tight">{cita.servicio}</p>
+                              <p className="font-semibold text-gray-800 leading-tight">{cita.servicio}{cita.numero_sesion ? <span className="ml-1 text-[10px] text-gray-400 font-semibold">#S{cita.numero_sesion}</span> : ''}</p>
                             </div>
                             <div>
                               <p className="text-[10px] text-gray-400 uppercase font-semibold">Especialista</p>
@@ -455,32 +578,65 @@ const Appointments = ({ onNavigate }) => {
                               </p>
                               <p className="text-[10px] text-gray-500 mt-0.5">{cita.hora_inicio?.slice(0, 5)} - {cita.hora_fin?.slice(0, 5)}</p>
                             </div>
-                            <div>
-                              <p className="text-[10px] text-gray-400 uppercase font-semibold">Estado Pago</p>
-                              <div className="mt-0.5">{getPaymentBadge(cita.estado_pago)}</div>
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <p className="text-[10px] text-gray-400 uppercase font-semibold">Estado Pago</p>
+                                <div className="mt-0.5 flex items-center gap-2">
+                                  {getPaymentBadge(cita.estado_pago)}
+                                  {cita.estado_pago === 'Pendiente' && (
+                                    <button
+                                      onClick={() => handleOpenPaymentModal()}
+                                      className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[#003178] hover:bg-blue-50 transition-colors cursor-pointer"
+                                      title="Ver métodos de pago"
+                                    >
+                                      <span className="material-symbols-outlined text-[14px]">credit_card</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </div>
-                          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center pt-2.5 border-t border-gray-100 gap-3">
-                            <span className="text-[10px] text-[#003178] font-bold capitalize leading-tight">
-                              {cita.modalidad} {cita.modalidad === 'Virtual' ? '(Virtual)' : ` - ${cita.habitaciones?.locales?.nombre || 'Sede Central'}`}
-                            </span>
-                            <div className="flex gap-2 w-full sm:w-auto">
-                              <button
-                                onClick={() => setSelectedCita(cita)}
-                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex-1 sm:flex-initial text-center whitespace-nowrap"
-                              >
-                                Ver Detalles
-                              </button>
-                              {['Pendiente', 'Confirmada', 'Reprogramada'].includes(cita.estado_cita) && (
+                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center pt-2.5 border-t border-gray-100 gap-3">
+                              <span className="text-[10px] text-[#003178] font-bold capitalize leading-tight">
+                                {cita.modalidad === 'Virtual' ? 'Virtual' : `Presencial - ${cita.habitaciones?.locales?.nombre || 'Sede Central'}`}
+                              </span>
+                              <div className="flex gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto sm:justify-end">
                                 <button
-                                  onClick={() => handleCancelarCita(cita.id)}
-                                  className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-[11px] px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex-1 sm:flex-initial text-center whitespace-nowrap"
+                                  onClick={() => setSelectedCita(cita)}
+                                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex-1 sm:flex-initial text-center whitespace-nowrap"
                                 >
-                                  Cancelar
+                                  Ver Detalles
                                 </button>
-                              )}
+                                {cita.modalidad === 'Virtual' && (cita.link_reunion && cita.link_reunion.trim() !== '' ? (
+                                <a
+                                  href={cita.link_reunion}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white font-bold text-[11px] rounded-lg transition-colors cursor-pointer flex-1 sm:flex-initial text-center whitespace-nowrap"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">videocam</span>
+                                  Unirse
+                                </a>
+                              ) : (
+                                <span
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-400 font-bold text-[11px] rounded-lg cursor-not-allowed select-none flex-1 sm:flex-initial text-center whitespace-nowrap"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">videocam</span>
+                                  Pendiente
+                                </span>
+                              ))}
+                              <button
+                                onClick={() => ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'].includes(cita.estado_cita) ? handleCancelarCita(cita.id) : null}
+                                className={`font-bold text-[11px] px-3 py-1.5 rounded-lg transition-colors flex-1 sm:flex-initial text-center whitespace-nowrap ${
+                                  ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'].includes(cita.estado_cita)
+                                    ? 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 cursor-pointer'
+                                    : 'bg-gray-50 text-gray-300 border border-gray-100 cursor-not-allowed'
+                                }`}
+                              >
+                                Cancelar
+                              </button>
+                              </div>
                             </div>
-                          </div>
                         </div>
                       ))
                     )}
@@ -510,14 +666,24 @@ const Appointments = ({ onNavigate }) => {
                     <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Servicio</p>
                     <p className="font-semibold text-gray-900 mt-0.5">{selectedCita.servicio}</p>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Estado Cita</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Estado Cita</p>
                       <p className="mt-1">{getCitaStateBadge(selectedCita.estado_cita)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Estado Pago</p>
                       <p className="mt-1">{getPaymentBadge(selectedCita.estado_pago)}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Monto a Pagar</p>
+                      <p className="font-semibold text-gray-900 mt-0.5">{selectedCita.monto ? `S/ ${Number(selectedCita.monto).toFixed(2)}` : '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Sesión</p>
+                      <p className="font-semibold text-gray-900 mt-0.5">{selectedCita.numero_sesion ? `Sesión #${selectedCita.numero_sesion}` : '—'}</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -544,7 +710,25 @@ const Appointments = ({ onNavigate }) => {
                     <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Ubicación / Local</p>
                     <div className="text-sm text-gray-800 mt-0.5">
                       {selectedCita.modalidad === 'Virtual' ? (
-                        <p className="italic text-gray-500">Atención virtual</p>
+                        <div className="space-y-2">
+                          <p className="italic text-gray-500">Atención virtual</p>
+                          {selectedCita.link_reunion && selectedCita.link_reunion.trim() !== '' ? (
+                            <a
+                              href={selectedCita.link_reunion}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#003178] text-white font-bold text-xs rounded-lg hover:bg-blue-900 transition-colors cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">videocam</span>
+                              Unirse a la sesión virtual
+                            </a>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-4 py-2 bg-gray-100 text-gray-400 font-bold text-xs rounded-lg cursor-not-allowed select-none">
+                              <span className="material-symbols-outlined text-[16px]">videocam</span>
+                              Enlace de reunión pendiente
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-lg space-y-1 mt-1">
                           <p><span className="font-semibold text-gray-600">Local:</span> {selectedCita.habitaciones?.locales?.nombre || 'Sede Central'}</p>
@@ -559,6 +743,14 @@ const Appointments = ({ onNavigate }) => {
                   <div>
                     <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Paciente</p>
                     <p className="font-semibold text-gray-900 mt-0.5">{selectedCita.paciente_nombre}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Cupón Aplicado</p>
+                    <p className="font-semibold text-gray-900 mt-0.5">
+                      {selectedCita.cupon_aplicado
+                        ? `${selectedCita.cupon_aplicado.codigo}${selectedCita.cupon_aplicado.tipo_descuento === 'Porcentaje' ? ` — ${selectedCita.cupon_aplicado.valor_descuento}% de descuento` : ` — S/ ${Number(selectedCita.cupon_aplicado.valor_descuento).toFixed(2)} de descuento`}`
+                        : 'Ninguno'}
+                    </p>
                   </div>
                   {selectedCita.comentario_paciente && (
                     <div>
@@ -579,6 +771,84 @@ const Appointments = ({ onNavigate }) => {
             </div>
           )}
       </div>
+
+      {showPaymentModal && (
+        <div
+          onClick={() => setShowPaymentModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden max-w-lg w-full p-6 animate-fade-in-up max-h-[90vh] overflow-y-auto"
+          >
+            <header className="flex justify-between items-center border-b border-gray-100 pb-4 mb-4">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <span className="material-symbols-outlined text-[#003178">account_balance</span>
+                Métodos de Pago
+              </h3>
+              <button onClick={() => setShowPaymentModal(false)} className="text-gray-400 hover:text-red-500 transition-colors cursor-pointer">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </header>
+            {loadingMetodosPago ? (
+              <div className="flex justify-center py-10">
+                <div className="w-8 h-8 border-4 border-[#003178] border-t-transparent rounded-full animate-spin"></div>
+              </div>
+            ) : metodosPagoClinica.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-8">No hay métodos de pago configurados.</p>
+            ) : (
+              <div className="space-y-4">
+                {['TRANSFERENCIA', 'YAPE', 'OTROS'].map(tipo => {
+                  const items = metodosPagoClinica.filter(m => m.tipo === tipo);
+                  if (items.length === 0) return null;
+                  return items.map((item, idx) => (
+                    <div key={idx} className="p-4 border border-gray-200 rounded-xl bg-slate-50/50 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[#003178]">
+                          {tipo === 'YAPE' ? 'qr_code' : tipo === 'TRANSFERENCIA' ? 'account_balance' : 'payments'}
+                        </span>
+                        <h4 className="font-bold text-sm text-gray-800 capitalize">{tipo === 'TRANSFERENCIA' ? 'Transferencia Bancaria' : tipo}</h4>
+                      </div>
+                      {item.titular && <p className="text-xs text-gray-600"><span className="font-semibold">Titular:</span> {item.titular}</p>}
+                      {tipo === 'YAPE' && item.numero_yape && <p className="text-xs text-gray-600"><span className="font-semibold">N° Celular:</span> <span className="font-mono font-bold">{item.numero_yape}</span></p>}
+                      {item.banco && <p className="text-xs text-gray-600"><span className="font-semibold">Banco:</span> {item.banco}</p>}
+                      {item.numero_cuenta && <p className="text-xs text-gray-600"><span className="font-semibold">N° Cuenta:</span> <span className="font-mono font-bold">{item.numero_cuenta}</span></p>}
+                      {item.cci && <p className="text-xs text-gray-600"><span className="font-semibold">CCI:</span> <span className="font-mono font-bold">{item.cci}</span></p>}
+                      {item.codigo_qr && (
+                        <div className="mt-2">
+                          <img src={item.codigo_qr} alt="QR" className="w-32 h-32 object-contain border border-gray-200 rounded-lg" />
+                        </div>
+                      )}
+                    </div>
+                  ));
+                })}
+              </div>
+            )}
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setShowPaymentModal(false)}
+                className="px-5 py-2 bg-[#003178] hover:bg-blue-900 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmModal
+        isOpen={showCancelConfirm}
+        title="Cancelar Cita"
+        message="¿Estás seguro de que deseas cancelar esta cita? Esta acción no se puede deshacer."
+        confirmText="Sí, cancelar"
+        cancelText="No, mantener"
+        variant="danger"
+        onConfirm={confirmarCancelacionCita}
+        onCancel={() => {
+          setShowCancelConfirm(false);
+          setCitaIdParaCancelar(null);
+        }}
+      />
     </DashboardLayout>
   );
 };
