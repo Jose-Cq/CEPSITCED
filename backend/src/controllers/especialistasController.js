@@ -83,6 +83,7 @@ export const getEspecialistasLanding = async (req, res) => {
 
     for (const p of personalList) {
       const emp = empMap.get(p.empleado_id);
+      if (emp && emp.ofrece_servicios === false) continue;
 
       const assign = assignMap.get(p.empleado_id);
       const cargoName = assign ? cargoMap.get(assign.cargo_id) : null;
@@ -116,7 +117,9 @@ export const getEspecialistasLanding = async (req, res) => {
         nombreCompleto: fullName,
         nombre: fullName, // Legacy
         cargo: cargoName || 'Psicólogo(a)',
+        cargo_id: assign ? assign.cargo_id : null,
         area: areaName || '',
+        area_id: assign ? assign.area_id : null,
         especialidad: specialtyText, // Legacy
         nroCpsp: cpspText,
         colegiatura: cpspText || 'C.Ps.P. Disponible', // Legacy

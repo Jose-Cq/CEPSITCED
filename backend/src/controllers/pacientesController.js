@@ -394,10 +394,12 @@ export const getEmpleados = async (req, res) => {
       .eq('activo', true);
 
     if (error) throw error;
-    const mappedData = data ? data.map(emp => ({
-      ...emp,
-      nombres_apellidos: `${emp.nombres || ''} ${emp.apellido_paterno || ''} ${emp.apellido_materno || ''}`.trim()
-    })) : [];
+    const mappedData = data ? data
+      .filter(emp => emp.ofrece_servicios !== false)
+      .map(emp => ({
+        ...emp,
+        nombres_apellidos: `${emp.nombres || ''} ${emp.apellido_paterno || ''} ${emp.apellido_materno || ''}`.trim()
+      })) : [];
     return res.json({ success: true, data: mappedData });
   } catch (error) {
     console.error('Error al obtener empleados:', error.message);

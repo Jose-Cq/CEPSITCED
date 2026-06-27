@@ -10,14 +10,29 @@
  */
 export const calcularSufijoHC = (fechaNacimiento, genero) => {
   if (!fechaNacimiento || !genero) return '';
-  const hoy = new Date();
-  const fechaNac = new Date(fechaNacimiento);
   
-  let edad = hoy.getFullYear() - fechaNac.getFullYear();
-  const mesActual = hoy.getMonth();
-  const mesNac = fechaNac.getMonth();
+  // Calculate Peru local date
+  const dateInPeru = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Lima' }));
   
-  if (mesActual < mesNac || (mesActual === mesNac && hoy.getDate() < fechaNac.getDate())) {
+  // Parse birth date using regex to prevent timezone shift issues
+  const match = String(fechaNacimiento).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  let añoNac, mesNac, diaNac;
+  if (match) {
+    añoNac = Number(match[1]);
+    mesNac = Number(match[2]) - 1; // 0-indexed month
+    diaNac = Number(match[3]);
+  } else {
+    const d = new Date(fechaNacimiento);
+    añoNac = d.getFullYear();
+    mesNac = d.getMonth();
+    diaNac = d.getDate();
+  }
+  
+  let edad = dateInPeru.getFullYear() - añoNac;
+  const mesActual = dateInPeru.getMonth();
+  const diaActual = dateInPeru.getDate();
+  
+  if (mesActual < mesNac || (mesActual === mesNac && diaActual < diaNac)) {
     edad--;
   }
   
@@ -42,11 +57,21 @@ export const calcularSufijoHC = (fechaNacimiento, genero) => {
 export const generarSiguienteHC = async (supabase, fechaNacimiento, genero, alreadyGenerated = []) => {
   const sufijo = calcularSufijoHC(fechaNacimiento, genero);
   
-  // Query the highest HC number ending in the calculated suffix
+  // Get date in Peru (America/Lima)
+  const dateInPeru = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Lima' }));
+  const dia = String(dateInPeru.getDate()).padStart(2, '0');
+  const mes = String(dateInPeru.getMonth() + 1).padStart(2, '0');
+  const anio = String(dateInPeru.getFullYear()).slice(-2);
+  const fechaHoyStr = `${dia}${mes}${anio}`; // DDMMAA
+  
+  // Search pattern is XXXXDDMMAAL where DDMMAAL is date + suffix
+  const patternSearch = `%${fechaHoyStr}${sufijo}`;
+  
+  // Query the highest HC number ending in the calculated DDMMAAL pattern
   const { data, error } = await supabase
     .from('pacientes')
     .select('numero_hc')
-    .like('numero_hc', `%${sufijo}`)
+    .like('numero_hc', patternSearch)
     .order('numero_hc', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -57,9 +82,9 @@ export const generarSiguienteHC = async (supabase, fechaNacimiento, genero, alre
 
   let ultimoHC = data?.numero_hc || null;
 
-  // If we already generated HCs with this suffix in the current request, find the highest one
+  // If we already generated HCs with this suffix and date in the current request, find the highest one
   for (const hc of alreadyGenerated) {
-    if (hc.endsWith(sufijo)) {
+    if (hc.endsWith(`${fechaHoyStr}${sufijo}`)) {
       if (!ultimoHC || hc > ultimoHC) {
         ultimoHC = hc;
       }
@@ -75,11 +100,7 @@ export const generarSiguienteHC = async (supabase, fechaNacimiento, genero, alre
     }
   }
 
-  const hoy = new Date();
-  const dia = String(hoy.getDate()).padStart(2, '0');
-  const mes = String(hoy.getMonth() + 1).padStart(2, '0');
-  const anio = String(hoy.getFullYear()).slice(-2);
   const secuencialStr = String(secuencial).padStart(4, '0');
 
-  return `${secuencialStr}${dia}${mes}${anio}${sufijo}`;
+  return `${secuencialStr}${fechaHoyStr}${sufijo}`;
 };

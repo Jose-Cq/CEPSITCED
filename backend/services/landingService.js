@@ -44,6 +44,21 @@ export const obtenerTestimoniosLanding = async () => {
 };
 
 /**
+ * Obtiene la configuración de Misión y Visión para la landing.
+ * @returns {Promise<Object|null>}
+ */
+export const obtenerMisionVisionLanding = async () => {
+  try {
+    const res = await fetch('/api/landing/mision-vision');
+    if (!res.ok) throw new Error('Error al obtener misión y visión desde la API');
+    return await res.json();
+  } catch (err) {
+    console.error('Error en obtenerMisionVisionLanding:', err.message);
+    return null;
+  }
+};
+
+/**
  * Obtiene las preguntas frecuentes (FAQs) activas para la landing.
  * @returns {Promise<Array>}
  */

@@ -48,6 +48,22 @@ export const getTestimonios = async (req, res) => {
   }
 };
 
+export const getMisionVision = async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('landing_configuracion')
+      .select('mision_titulo, mision_subtitulo, mision_texto, vision_titulo, vision_subtitulo, vision_texto, nosotros_imagen_url, mostrar_nosotros')
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    return res.json(data || null);
+  } catch (err) {
+    console.error('Error en getMisionVision:', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 export const getFaq = async (req, res) => {
   try {
     const { data, error } = await supabase
