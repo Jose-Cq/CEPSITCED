@@ -7,7 +7,7 @@ import RegisterModal from './components/RegisterModal';
 import Appointments from './pages/Appointments';
 import BookAppointment from './pages/BookAppointment';
 import Family from './pages/Family';
-import Documents from './pages/Documents';
+import PatientDocuments from './pages/PatientDocuments';
 import Profile from './pages/Profile';
 import DashboardHome from './pages/DashboardHome';
 import { PacienteProvider } from './hooks/usePacienteActual';
@@ -22,7 +22,7 @@ import SpecialistsCarousel from './components/SpecialistsCarousel';
 import TestimonialsCarousel from './components/TestimonialsCarousel';
 import FaqSection from './components/FaqSection';
 import Footer from './components/Footer';
-import { obtenerCarruselLanding, obtenerConfiguracionLanding, obtenerTestimoniosLanding, obtenerFaqsLanding } from '@backend/services/landingService.js';
+import { obtenerCarruselLanding, obtenerConfiguracionLanding, obtenerTestimoniosLanding, obtenerFaqsLanding, obtenerMisionVisionLanding } from '@backend/services/landingService.js';
 
 const fallbackSlides = [
   {
@@ -58,10 +58,16 @@ const LandingPage = ({ onOpenAuth }) => {
       }
 
       try {
-        const configData = await obtenerConfiguracionLanding();
-        setConfig(configData);
+        const [configData, nosotrosData] = await Promise.all([
+          obtenerConfiguracionLanding(),
+          obtenerMisionVisionLanding()
+        ]);
+        setConfig({
+          ...(configData || {}),
+          ...(nosotrosData || {})
+        });
       } catch (err) {
-        console.error('Error fetching config data:', err);
+        console.error('Error fetching config or nosotros data:', err);
       } finally {
         setLoadingConfig(false);
       }
@@ -276,7 +282,9 @@ const LandingPage = ({ onOpenAuth }) => {
         )}
 
         {/* Sección de Preguntas Frecuentes */}
-        <FaqSection faqs={faqs} />
+        {config?.mostrar_faq !== false && (
+          <FaqSection faqs={faqs} />
+        )}
       </main>
 
 
@@ -348,7 +356,7 @@ const App = () => {
           <Route path="/dashboard/appointments" element={<Appointments />} />
           <Route path="/dashboard/book-appointment" element={<BookAppointment />} />
           <Route path="/dashboard/family" element={<Family />} />
-          <Route path="/dashboard/documents" element={<Documents />} />
+          <Route path="/dashboard/documents" element={<PatientDocuments />} />
           <Route path="/dashboard/profile" element={<Profile />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/independizarse" element={<Independizarse />} />

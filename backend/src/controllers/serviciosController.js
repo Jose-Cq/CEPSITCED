@@ -23,7 +23,8 @@ export const getServiciosLandingPorLocal = async (req, res) => {
       .from('servicios')
       .select('*')
       .eq('activo', true)
-      .eq('mostrar_landing', true);
+      .eq('mostrar_landing', true)
+      .or('es_tramite.is.null,es_tramite.eq.false');
 
     if (error) throw error;
     if (!servs) return res.json([]);

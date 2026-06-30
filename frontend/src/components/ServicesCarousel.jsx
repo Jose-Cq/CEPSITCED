@@ -28,7 +28,7 @@ const getServiceFallbackDesc = (nombre) => {
 
 const ServicesCarousel = ({ onOpenAuth }) => {
   const [locales, setLocales] = useState([]);
-  const [selectedLocal, setSelectedLocal] = useState(''); // '' means all
+  const [selectedLocal, setSelectedLocal] = useState(null);
   const [allServices, setAllServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -107,7 +107,7 @@ const ServicesCarousel = ({ onOpenAuth }) => {
           obtenerServiciosLandingPorLocal('') // Get all active services
         ]);
 
-        const servicesList = servicesData || [];
+        const servicesList = (servicesData || []).filter(s => !s.es_tramite);
         const rawLocales = localesData || [];
 
         // Filter out locales that do NOT have any active service
@@ -121,6 +121,7 @@ const ServicesCarousel = ({ onOpenAuth }) => {
 
         setLocales(filteredLocales);
         setAllServices(servicesList);
+        if (filteredLocales.length > 0) setSelectedLocal(filteredLocales[0].id);
       } catch (err) {
         console.error('Error fetching services and locales:', err);
       } finally {
@@ -252,15 +253,6 @@ const ServicesCarousel = ({ onOpenAuth }) => {
         {/* Local Filter Selector */}
         {showLocalFilter && (
           <div className="flex flex-wrap justify-center gap-3 mb-8">
-            <button
-              onClick={() => setSelectedLocal('')}
-              className={`px-5 py-2.5 rounded-full font-bold text-xs uppercase tracking-wider transition-all cursor-pointer border ${selectedLocal === ''
-                ? 'bg-[#003178] text-white border-[#003178] shadow-md'
-                : 'bg-white text-gray-650 border-slate-200 hover:border-[#003178] hover:text-[#003178]'
-                }`}
-            >
-              Todos los Locales
-            </button>
             {locales.map((loc) => (
               <button
                 key={loc.id}

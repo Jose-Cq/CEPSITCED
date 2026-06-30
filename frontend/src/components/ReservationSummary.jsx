@@ -66,9 +66,7 @@ const ReservationSummary = ({
   const modNombre = isPacienteModalidadLocalActive && modalidad ? modalidad : '-';
 
   let localNombre = '-';
-  if (modalidad === 'Virtual') {
-    localNombre = 'No aplica';
-  } else if (isPacienteModalidadLocalActive && localSeleccionado) {
+  if (isPacienteModalidadLocalActive && localSeleccionado) {
     localNombre = localSeleccionado.nombre;
   }
 
@@ -93,11 +91,8 @@ const ReservationSummary = ({
   const summaryItems = [
     { label: 'Paciente', value: pacienteNombre, active: pacienteNombre !== '-', stepId: 'paciente_modalidad_local' },
     { label: 'Modalidad', value: modNombre, active: modNombre !== '-', stepId: 'paciente_modalidad_local' },
+    { label: 'Sede / Local', value: localNombre, active: localNombre !== '-', stepId: 'paciente_modalidad_local' }
   ];
-
-  if (modalidad !== 'Virtual') {
-    summaryItems.push({ label: 'Sede / Local', value: localNombre, active: localNombre !== '-' && localNombre !== 'No aplica', stepId: 'paciente_modalidad_local' });
-  }
 
   summaryItems.push(
     { label: 'Servicio', value: servicioNombre, active: servicioNombre !== '-', stepId: 'servicio_psicologo' },
@@ -111,7 +106,7 @@ const ReservationSummary = ({
   return (
     <div className={`bg-white border border-gray-200 rounded-2xl p-6 md:p-8 shadow-sm text-left ${isMobile ? 'mb-6' : ''}`}>
       <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wider mb-4 border-b pb-2 font-sans">
-        Resumen de Reserva
+        Resumen de Cita
       </h3>
       <div className="divide-y divide-gray-100">
         {summaryItems.map((item, idx) => {

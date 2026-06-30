@@ -51,7 +51,7 @@ const MissionVisionSection = ({ config = null, loading = false }) => {
   const safeVisionTitulo = config?.vision_titulo || 'Nuestra Visión';
   const safeVisionSub = config?.vision_subtitulo || 'Compromiso Ético y Calidad';
   const safeVisionText = config?.vision_texto || 'Ser una institución destacada y reconocida en el ámbito de la salud mental y el apoyo a instituciones educativas, contribuyendo a la prevención, promoción e intervención psicológica con calidad humana, ética profesional y compromiso social.';
-  const safeImagenUrl = config?.nosotros_imagen_url || FALLBACK_IMAGE;
+  const safeImagenUrl = config?.imagen_url || FALLBACK_IMAGE;
 
   return (
     <section
@@ -83,22 +83,36 @@ const MissionVisionSection = ({ config = null, loading = false }) => {
             className={`hidden lg:flex lg:col-span-5 flex-col items-stretch transition-all duration-1000 transform ${isVisible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-12'
               }`}
           >
-            <div className="relative w-full rounded-3xl border border-slate-100/80 bg-white p-8 shadow-sm hover:shadow-md hover:border-blue-200 transition-all duration-300 flex flex-col items-center justify-center min-h-[420px] flex-1">
-              <img
-                src={safeImagenUrl}
-                alt="Logo CEPSITCED"
-                className="max-w-[260px] max-h-[220px] object-contain select-none transition-transform duration-500 hover:scale-105"
-                onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMAGE; }}
-              />
-              {/* Sello de confianza flotante */}
-              <div className="absolute -bottom-4 -right-4 bg-[#003178] text-white p-5 rounded-2xl shadow-xl hidden sm:flex items-center gap-3 border border-blue-800">
-                <span className="material-symbols-outlined text-[32px] text-[#6cbdfe]">workspace_premium</span>
-                <div className="text-left">
-                  <p className="text-xs font-bold uppercase tracking-wider text-slate-300">Atención Ética</p>
-                  <p className="text-sm font-black text-white leading-none">100% Profesional</p>
+            {(() => {
+              const isFallback = safeImagenUrl === FALLBACK_IMAGE;
+              return (
+                <div className="relative w-full min-h-[420px] flex-1 flex flex-col">
+                  {/* Contenedor de la Imagen */}
+                  <div className={`w-full flex-1 rounded-3xl border border-slate-100/80 bg-white shadow-sm hover:shadow-md hover:border-blue-200 transition-all duration-300 overflow-hidden ${
+                    isFallback ? 'flex flex-col items-center justify-center p-8' : ''
+                  }`}>
+                    <img
+                      src={safeImagenUrl}
+                      alt="Nosotros CEPSITCED"
+                      className={
+                        isFallback
+                          ? "max-w-[260px] max-h-[220px] object-contain select-none transition-transform duration-500 hover:scale-105"
+                          : "w-full h-full object-cover select-none transition-transform duration-500 hover:scale-105"
+                      }
+                      onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_IMAGE; }}
+                    />
+                  </div>
+                  {/* Sello de confianza flotante (Hermano del contenedor de la imagen) */}
+                  <div className="absolute -bottom-5 -right-5 z-20 bg-[#003178] text-white p-5 rounded-2xl shadow-xl hidden sm:flex items-center gap-3 border border-blue-800">
+                    <span className="material-symbols-outlined text-[32px] text-[#6cbdfe]">workspace_premium</span>
+                    <div className="text-left">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-300">Atención Ética</p>
+                      <p className="text-sm font-black text-white leading-none">100% Profesional</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              );
+            })()}
           </div>
 
           {/* Right Side: Composition of Mission & Vision */}

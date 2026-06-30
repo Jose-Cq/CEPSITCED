@@ -15,7 +15,7 @@ const StepPatientSelection = ({
   esClinicoIncompletoFamiliar,
   isPresencialAvailable,
   isVirtualAvailable,
-  validLocales,
+  locales,
   handlePacienteChange,
   handleModalidadChange,
   handleLocalChange,
@@ -76,7 +76,7 @@ const StepPatientSelection = ({
 
             {paraQuien === 'familiar' && (
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-left animate-in fade-in slide-in-from-top-1 duration-200 w-full h-[88px] flex flex-col justify-center overflow-hidden">
-                {perfilesDependientes.length === 0 ? (
+                {(!perfilesDependientes || perfilesDependientes.length === 0) ? (
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-[11px] text-gray-500 font-semibold font-sans">No tienes miembros registrados.</p>
                     <button
@@ -96,7 +96,7 @@ const StepPatientSelection = ({
                       className="w-full p-1.5 border border-gray-200 bg-white rounded-lg text-[11px] focus:border-[#003178] outline-none text-gray-700 font-sans"
                     >
                       <option value="">Seleccionar miembro...</option>
-                      {perfilesDependientes.map(dep => {
+                      {(perfilesDependientes || []).map(dep => {
                         const primerNombre = (dep.nombres || '').trim().split(' ')[0];
                         const primerApellido = (dep.apellido_paterno || '').trim().split(' ')[0];
                         return (
@@ -165,21 +165,21 @@ const StepPatientSelection = ({
         </div>
       )}
 
-      {/* Sección 3: Local (solo presencial) */}
-      {pacienteValid && modalidad === 'Presencial' && (
+      {/* Sección 3: Local */}
+      {pacienteValid && (modalidad === 'Presencial' || modalidad === 'Virtual') && (
         <div className="space-y-2.5 text-left border-t border-slate-100 pt-4 animate-in fade-in slide-in-from-top-2 duration-300">
           <h4 className="font-bold text-xs text-slate-700 uppercase tracking-widest pb-1.5 flex items-center gap-1.5 font-sans">
             <span className="material-symbols-outlined text-slate-500 text-base">storefront</span>
             3. Selecciona la Sede
           </h4>
-          {validLocales.length === 0 ? (
+          {(!locales || locales.length === 0) ? (
             <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl flex items-center gap-2 max-w-xl">
               <span className="material-symbols-outlined text-amber-500">warning</span>
-              No hay locales disponibles con horarios libres en modalidad presencial.
+              No hay locales disponibles.
             </div>
           ) : (
             <div className="flex flex-wrap gap-3 w-full">
-              {validLocales.map(l => {
+              {(locales || []).map(l => {
                 const isSelected = localSeleccionado?.id === l.id;
                 return (
                   <SelectableCard

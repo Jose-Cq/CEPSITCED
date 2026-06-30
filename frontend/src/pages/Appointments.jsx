@@ -41,7 +41,7 @@ const Appointments = ({ onNavigate }) => {
       if (res.success) {
         toast.success('Cita cancelada correctamente.');
         setAppointments(prev =>
-          prev.map(c => (c.id === citaId ? { ...c, estado_cita: 'Cancelada' } : c))
+          prev.map(c => (c.id === citaId ? { ...c, estado_cita: 'Cancelado' } : c))
         );
       } else {
         toast.error('Error al cancelar la cita: ' + res.error);
@@ -121,11 +121,11 @@ const Appointments = ({ onNavigate }) => {
     let list = displayAppointments;
 
     if (activeTab === 'activas') {
-      list = list.filter(cita => ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'].includes(cita.estado_cita));
+      list = list.filter(cita => ['Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita));
     } else if (activeTab === 'completadas') {
-      list = list.filter(cita => ['Realizada', 'Completada', 'Atendida', 'Ausente'].includes(cita.estado_cita));
+      list = list.filter(cita => ['Realizada', 'Completada', 'Atendido', 'Ausente'].includes(cita.estado_cita));
     } else if (activeTab === 'canceladas') {
-      list = list.filter(cita => ['Cancelada'].includes(cita.estado_cita));
+      list = list.filter(cita => ['Cancelado', 'Cancelada'].includes(cita.estado_cita));
     }
 
     const sorted = [...list];
@@ -158,7 +158,7 @@ const Appointments = ({ onNavigate }) => {
 
   const ahora = new Date();
   const hoyStr = new Date().toISOString().split('T')[0];
-  const ESTADOS_ACTIVOS = ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'];
+  const ESTADOS_ACTIVOS = ['Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'];
   const proximaCita = displayAppointments
     .filter(cita => new Date(`${cita.fecha_cita}T${cita.hora_inicio}`) > ahora && ESTADOS_ACTIVOS.includes(cita.estado_cita))
     .sort((a, b) => new Date(`${a.fecha_cita}T${a.hora_inicio}`) - new Date(`${b.fecha_cita}T${b.hora_inicio}`))[0];
@@ -183,6 +183,8 @@ const Appointments = ({ onNavigate }) => {
       Pendiente: { bg: 'bg-yellow-50', text: 'text-yellow-800', border: 'border-yellow-200', dot: 'bg-yellow-500' },
       Pagado: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-200', dot: 'bg-green-500' },
       'Cobertura especial': { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200', dot: 'bg-blue-500' },
+      Rechazado: { bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-200', dot: 'bg-red-500' },
+      Cancelado: { bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-200', dot: 'bg-red-500' },
     };
     const style = badges[estado] || badges.Pendiente;
     return (
@@ -195,7 +197,9 @@ const Appointments = ({ onNavigate }) => {
 
   // Mapeo de estados internos que no deben mostrarse textualmente al paciente
   const ESTADOS_OCULTOS_PACIENTE = {
-    'En consulta': 'Confirmada'
+    'En consulta': 'Confirmado',
+    'En Consulta': 'Confirmado',
+    'Confirmada': 'Confirmado'
   };
 
   const getEstadoDisplay = (estado) => {
@@ -206,11 +210,12 @@ const Appointments = ({ onNavigate }) => {
     const displayEstado = getEstadoDisplay(estado);
     const badges = {
       Pendiente: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
+      Confirmado: { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200' },
       Confirmada: { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200' },
       Realizada: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-200' },
       Completada: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-200' },
-      Atendida: { bg: 'bg-teal-50', text: 'text-teal-800', border: 'border-teal-200' },
-      Cancelada: { bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-200' },
+      Atendido: { bg: 'bg-teal-50', text: 'text-teal-800', border: 'border-teal-200' },
+      Cancelado: { bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-200' },
       Ausente: { bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-200' },
       Reprogramada: { bg: 'bg-purple-50', text: 'text-purple-800', border: 'border-purple-200' },
     };
@@ -222,13 +227,31 @@ const Appointments = ({ onNavigate }) => {
     );
   };
 
+  const simplificarNombre = (nombreCompleto) => {
+    if (!nombreCompleto) return '';
+    let limpio = nombreCompleto.replace(/^(lic|psic|dr|dra|mg|licenciado|doctor|magister)\.?\s+/i, '').trim();
+    const esYo = limpio.endsWith(' (Yo)');
+    if (esYo) {
+      limpio = limpio.replace(' (Yo)', '').trim();
+    }
+    const partes = limpio.split(/\s+/);
+    if (partes.length <= 2) {
+      return nombreCompleto;
+    }
+    const primerNombre = partes[0];
+    const apellidoPaterno = partes[partes.length - 2];
+    const apellidoMaterno = partes[partes.length - 1];
+    const simplificado = `${primerNombre} ${apellidoPaterno} ${apellidoMaterno}`;
+    return esYo ? `${simplificado} (Yo)` : simplificado;
+  };
+
   const loading = loadingProfile || loadingCitas;
   const currentError = profileError || error;
 
   return (
     <DashboardLayout currentPath="/dashboard/appointments" onNavigate={onNavigate}>
       <div className="w-full space-y-6">
-        <div className="mb-8">
+        <div className="mb-8 animate-fade-in">
           <h2 className="text-3xl font-bold text-slate-900 mb-2">Mis Citas</h2>
           <p className="text-slate-500 text-sm md:text-base leading-relaxed">
             Gestiona tus próximas sesiones y revisa visitas clínicas pasadas.
@@ -356,7 +379,7 @@ const Appointments = ({ onNavigate }) => {
                                 Pendiente
                               </span>
                             ))}
-                            {['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'].includes(proximaCita.estado_cita) && (
+                            {['Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(proximaCita.estado_cita) && (
                               <button
                                 onClick={() => handleCancelarCita(proximaCita.id)}
                                 className="inline-flex items-center justify-center h-[36px] px-4 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap"
@@ -386,14 +409,14 @@ const Appointments = ({ onNavigate }) => {
                     <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-md flex flex-col items-center justify-center text-center group cursor-pointer transition-all duration-300 hover:bg-[#003178]">
                       <span className="material-symbols-outlined text-green-600 group-hover:text-white text-[24px] mb-1 transition-colors duration-300">check_circle</span>
                       <p className="text-xl font-bold text-gray-900 group-hover:text-white transition-colors duration-300">
-                        {appointments.filter(cita => ['Realizada', 'Completada', 'Atendida'].includes(cita.estado_cita)).length}
+                        {appointments.filter(cita => ['Realizada', 'Completada', 'Atendido'].includes(cita.estado_cita)).length}
                       </p>
                       <p className="text-[10px] font-semibold text-slate-500 group-hover:text-white/80 uppercase tracking-wider mt-0.5 transition-colors duration-300">Completadas</p>
                     </div>
                     <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-md flex flex-col items-center justify-center text-center group cursor-pointer transition-all duration-300 hover:bg-[#003178]">
                       <span className="material-symbols-outlined text-red-500 group-hover:text-white text-[24px] mb-1 transition-colors duration-300">cancel</span>
                       <p className="text-xl font-bold text-gray-900 group-hover:text-white transition-colors duration-300">
-                        {appointments.filter(cita => ['Cancelada', 'Reprogramada'].includes(cita.estado_cita)).length}
+                        {appointments.filter(cita => ['Cancelado', 'Reprogramada'].includes(cita.estado_cita)).length}
                       </p>
                       <p className="text-[10px] font-semibold text-slate-500 group-hover:text-white/80 uppercase tracking-wider mt-0.5 transition-colors duration-300">Canceladas / Repro.</p>
                     </div>
@@ -403,15 +426,14 @@ const Appointments = ({ onNavigate }) => {
                       <p className="text-[10px] font-semibold text-slate-500 group-hover:text-white/80 uppercase tracking-wider mt-0.5 transition-colors duration-300">Total Sesiones</p>
                     </div>
                   </div>
-
                 </div>
               </div>
 
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-fade-in-up w-full max-w-full">
-                <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-gray-50/50 w-full max-w-full">
-                  <h3 className="text-xl font-semibold text-gray-900">Historial de Citas</h3>
-                  <div className="w-full sm:w-auto overflow-x-auto">
-                    <div className="flex gap-2 min-w-max p-1 bg-gray-100/80 rounded-xl border border-gray-200/40">
+                <div className="p-6 border-b border-[#003366] bg-[#003366] text-white flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 w-full max-w-full">
+                  <h3 className="text-xl font-bold text-white">Historial de Citas</h3>
+                  <div className="w-full sm:w-auto overflow-x-auto shrink-0">
+                    <div className="flex gap-1.5 min-w-max p-1 bg-white/10 backdrop-blur-sm rounded-xl border border-white/10">
                       {[
                         { id: 'activas', label: 'Pendientes' },
                         { id: 'completadas', label: 'Completadas' },
@@ -423,10 +445,10 @@ const Appointments = ({ onNavigate }) => {
                           <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
-                            className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex-shrink-0 whitespace-nowrap ${
+                            className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer flex-shrink-0 whitespace-nowrap select-none ${
                               isActive
-                                ? 'bg-white text-[#003178] shadow-sm border border-gray-200/30'
-                                : 'text-gray-500 hover:text-gray-900 hover:bg-white/40'
+                                ? 'bg-white text-[#003366] shadow-sm font-bold'
+                                : 'text-blue-200/80 hover:text-white hover:bg-white/10'
                             }`}
                           >
                             {tab.label}
@@ -439,20 +461,20 @@ const Appointments = ({ onNavigate }) => {
                 <div className="w-full max-w-full overflow-hidden">
                   <div className="hidden lg:block w-full max-w-full overflow-hidden">
                     <div className="overflow-x-auto max-w-full">
-                      <table className="w-full min-w-[800px] text-center border-collapse">
+                      <table className="w-full min-w-[800px] text-center border-collapse table-fixed">
                         <thead>
-                          <tr className="bg-gray-50/30 border-b border-gray-100">
-                            <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Paciente</th>
-                            <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Especialista</th>
-                            <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Servicio</th>
-                            <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Fecha y Hora</th>
-                            <th className="py-4 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Estado Cita</th>
-                            <th className="py-4 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center"></th>
-                            <th className="py-4 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Estado Pago</th>
-                            <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Acciones</th>
+                          <tr className="bg-blue-50 border-b border-blue-100">
+                            <th className="py-4 px-3 text-xs font-semibold text-slate-700 uppercase tracking-wider text-center align-middle w-[14%]">Paciente</th>
+                            <th className="py-4 px-3 text-xs font-semibold text-slate-700 uppercase tracking-wider text-center align-middle w-[14%]">Especialista</th>
+                            <th className="py-4 px-6 text-xs font-semibold text-slate-700 uppercase tracking-wider text-center align-middle w-[14%]">Servicio</th>
+                            <th className="py-4 px-6 text-xs font-semibold text-slate-700 uppercase tracking-wider text-center align-middle w-[15%]">Fecha y Hora</th>
+                            <th className="py-4 px-3 text-xs font-semibold text-slate-700 uppercase tracking-wider text-center align-middle w-[11%]">Estado Cita</th>
+                            <th className="text-center w-[4%]"></th>
+                            <th className="py-4 px-3 text-xs font-semibold text-slate-700 uppercase tracking-wider text-center align-middle w-[11%]">Estado Pago</th>
+                            <th className="py-4 px-6 text-xs font-semibold text-slate-700 uppercase tracking-wider text-center align-middle w-[14%]">Acciones</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-gray-100 bg-white">
                           {filteredAppointments.length === 0 ? (
                             <tr>
                               <td colSpan="8" className="text-center py-12 text-slate-400 text-sm font-medium">
@@ -461,77 +483,84 @@ const Appointments = ({ onNavigate }) => {
                             </tr>
                           ) : (
                             filteredAppointments.map((cita) => (
-                              <tr key={cita.id} className="hover:bg-gray-50/50 transition-colors">
-                                <td className="py-4 px-6 text-center">
-                                  <span className="text-gray-900 font-bold text-sm">{cita.paciente_nombre}</span>
+                              <tr key={cita.id} className="bg-white hover:bg-gray-50/50 transition-colors">
+                                <td className="py-4 px-3 text-center align-middle w-[14%] text-gray-900 font-bold text-sm whitespace-normal break-words">
+                                  {simplificarNombre(cita.paciente_nombre)}
                                 </td>
-                                <td className="py-4 px-6 text-center">
-                                  <span className="text-gray-900 font-medium text-sm">{cita.psicologa_nombre || 'Especialista'}</span>
+                                <td className="py-4 px-3 text-center align-middle w-[14%] text-gray-900 font-medium text-sm whitespace-normal break-words">
+                                  {simplificarNombre(cita.psicologa_nombre) || 'Especialista'}
                                 </td>
-                                <td className="py-4 px-6 text-center text-gray-600 text-sm">{cita.servicio}{cita.numero_sesion ? <span className="ml-1 text-[11px] text-gray-400 font-semibold">#S{cita.numero_sesion}</span> : ''}</td>
-                                <td className="py-4 px-6 text-center text-sm">
-                                  <span className="text-gray-900 font-medium">
+                                <td className="py-4 px-6 text-center align-middle w-[14%] text-gray-600 text-sm whitespace-normal break-words">
+                                  {cita.servicio}{cita.numero_sesion ? <span className="ml-1 text-[11px] text-gray-400 font-semibold">#S{cita.numero_sesion}</span> : ''}
+                                </td>
+                                <td className="py-4 px-6 text-center align-middle w-[15%] text-sm">
+                                  <span className="text-gray-900 font-medium whitespace-normal break-words">
                                     {new Date(cita.fecha_cita + 'T00:00:00').toLocaleDateString('es-PE')}
                                   </span>
                                   <div className="mt-1">
                                     <span className="text-xs text-gray-550 font-semibold">{cita.hora_inicio?.slice(0, 5)} - {cita.hora_fin?.slice(0, 5)}</span>
                                   </div>
                                   <div className="mt-1">
-                                    <span className="text-[11px] text-[#003178] font-bold capitalize">
+                                    <span className="text-[11px] text-[#003178] font-bold capitalize whitespace-normal break-words">
                                       {cita.modalidad === 'Virtual' ? 'Virtual' : `Presencial - ${cita.habitaciones?.locales?.nombre || 'Sede Central'}`}
                                     </span>
                                   </div>
                                 </td>
-                                <td className="py-4 px-3 text-center">
+                                <td className="py-4 px-3 text-center align-middle w-[11%]">
                                   {getCitaStateBadge(cita.estado_cita)}
                                 </td>
-                                <td className="py-4 px-3 text-center align-middle">
-                                  {cita.estado_pago === 'Pendiente' && (
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); handleOpenPaymentModal(); }}
-                                      className="inline-flex items-center justify-center w-8 h-8 rounded-full text-[#003178] hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-all duration-200 cursor-pointer"
-                                      title="Ver métodos de pago"
-                                    >
-                                      <span className="material-symbols-outlined text-[18px]">credit_card</span>
-                                    </button>
-                                  )}
+                                <td className="py-4 px-3 text-center align-middle w-[4%]">
+                                  {cita.estado_pago === 'Pendiente' ? (
+                                    <div className="flex justify-center items-center">
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleOpenPaymentModal(); }}
+                                        className="inline-flex items-center justify-center w-8.5 h-8.5 rounded-lg text-[#003178] hover:bg-blue-50 border border-blue-200 transition-all duration-200 cursor-pointer shrink-0"
+                                        title="Ver métodos de pago"
+                                      >
+                                        <span className="material-symbols-outlined text-[20px] leading-none">credit_card</span>
+                                      </button>
+                                    </div>
+                                  ) : null}
                                 </td>
-                                <td className="py-4 px-3 text-center">{getPaymentBadge(cita.estado_pago)}</td>
-                                <td className="py-4 px-6 text-center align-middle">
+                                <td className="py-4 px-3 text-center align-middle w-[11%]">
+                                  {getPaymentBadge(cita.estado_pago)}
+                                </td>
+                                <td className="py-4 px-6 text-center align-middle w-[14%]">
                                   <div className="flex flex-row items-center justify-center gap-3">
                                     <button
                                       onClick={() => setSelectedCita(cita)}
-                                      className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-gray-500 hover:text-[#003178] hover:bg-gray-100 transition-all duration-200 cursor-pointer"
+                                      className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-gray-500 hover:text-[#003178] hover:bg-gray-100 transition-all duration-200 cursor-pointer shrink-0"
                                       title="Ver Detalles"
                                     >
                                       <span className="material-symbols-outlined text-[20px] leading-none">visibility</span>
                                     </button>
+
                                     {cita.modalidad === 'Virtual' && (cita.link_reunion && cita.link_reunion.trim() !== '' ? (
                                       <a
                                         href={cita.link_reunion}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-gray-500 hover:text-green-700 hover:bg-green-100 transition-all duration-200 cursor-pointer"
+                                        className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-gray-500 hover:text-green-700 hover:bg-green-100 transition-all duration-200 cursor-pointer shrink-0"
                                         title="Unirse a la sesión virtual"
                                       >
                                         <span className="material-symbols-outlined text-[20px] leading-none">videocam</span>
                                       </a>
                                     ) : (
                                       <span
-                                        className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-gray-200 cursor-not-allowed select-none"
+                                        className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-gray-200 cursor-not-allowed select-none shrink-0"
                                         title="Enlace de reunión pendiente"
                                       >
                                         <span className="material-symbols-outlined text-[20px] leading-none">videocam</span>
                                       </span>
                                     ))}
                                     <button
-                                      onClick={() => ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'].includes(cita.estado_cita) ? handleCancelarCita(cita.id) : null}
-                                      className={`inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all duration-200 ${
-                                        ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'].includes(cita.estado_cita)
+                                      onClick={() => ['Pending', 'Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita) ? handleCancelarCita(cita.id) : null}
+                                      className={`inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all duration-200 shrink-0 ${
+                                        ['Pending', 'Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita)
                                           ? 'text-gray-500 hover:text-red-650 hover:bg-red-50 cursor-pointer'
                                           : 'text-gray-200 cursor-not-allowed'
                                       }`}
-                                      title={['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'].includes(cita.estado_cita) ? 'Cancelar Cita' : 'No se puede cancelar'}
+                                      title={['Pending', 'Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita) ? 'Cancelar Cita' : 'No se puede cancelar'}
                                     >
                                       <span className="material-symbols-outlined text-[20px] leading-none">cancel</span>
                                     </button>
@@ -626,11 +655,11 @@ const Appointments = ({ onNavigate }) => {
                                 </span>
                               ))}
                               <button
-                                onClick={() => ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'].includes(cita.estado_cita) ? handleCancelarCita(cita.id) : null}
+                                onClick={() => ['Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita) ? handleCancelarCita(cita.id) : null}
                                 className={`font-bold text-[11px] px-3 py-1.5 rounded-lg transition-colors flex-1 sm:flex-initial text-center whitespace-nowrap ${
-                                  ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'].includes(cita.estado_cita)
+                                  ['Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita)
                                     ? 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 cursor-pointer'
-                                    : 'bg-gray-50 text-gray-300 border border-gray-100 cursor-not-allowed'
+                                    : 'bg-gray-55 text-gray-300 border border-gray-100 cursor-not-allowed'
                                 }`}
                               >
                                 Cancelar

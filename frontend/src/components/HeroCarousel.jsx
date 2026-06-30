@@ -14,22 +14,6 @@ const HeroCarousel = ({ slides = [], loading = false, onOpenAuth }) => {
     return () => clearInterval(timer);
   }, [slides.length]);
 
-  const handleButtonAction = (accion) => {
-    if (!accion) return;
-    if (accion === 'abrir_portal' || accion === '/auth') {
-      onOpenAuth();
-    } else if (accion.startsWith('#')) {
-      const el = document.querySelector(accion);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth' });
-      }
-    } else if (accion.startsWith('http')) {
-      window.open(accion, '_blank');
-    } else {
-      navigate(accion);
-    }
-  };
-
   if (loading) {
     return (
       <section id="inicio" className="relative h-[680px] w-full bg-gray-950 overflow-hidden flex items-center justify-center">
@@ -90,10 +74,10 @@ const HeroCarousel = ({ slides = [], loading = false, onOpenAuth }) => {
                 </p>
               )}
               <button
-                onClick={() => handleButtonAction(slide.boton_accion || 'abrir_portal')}
+                onClick={onOpenAuth}
                 className="rounded-2xl bg-[#6cbdfe] px-10 py-3.5 font-extrabold text-[#001d32] hover:bg-white transition-all transform hover:scale-102 hover:shadow-lg pointer-events-auto text-sm uppercase tracking-wider cursor-pointer"
               >
-                {slide.boton_texto || 'Agendar Cita Ahora'}
+                Agendar Cita
               </button>
             </div>
           </div>

@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase.js';
+import { sendSolicitudCambioPsicologoEmail } from '../utils/mailer.js';
 
 // Auxiliar para validar que el paciente pertenece al usuario o es su dependiente
 const verificarPertenenciaPaciente = async (pacienteId, userId) => {
@@ -56,7 +57,10 @@ export const getCitasPaciente = async (req, res) => {
       const sessionMap = {};
       for (const servicio of Object.keys(byServicio)) {
         const validCitas = byServicio[servicio]
-          .filter(c => c.estado_cita !== 'Cancelada' && c.estado_cita !== 'Ausente')
+          .filter(c => {
+            const estado = (c.estado_cita || '').toLowerCase();
+            return estado !== 'cancelado' && estado !== 'ausente';
+          })
           .sort((a, b) => {
             const dateCmp = String(a.fecha_cita).localeCompare(String(b.fecha_cita));
             if (dateCmp !== 0) return dateCmp;
@@ -107,14 +111,136 @@ export const postCrearCita = async (req, res) => {
       return res.status(403).json({ success: false, error: 'No tienes permiso para crear citas para este paciente.' });
     }
 
-    // --- Block: one pending cita per service at a time ---
-    // If the patient already has a cita with estado_cita = 'Pendiente' or
-    // estado_pago = 'Pendiente' for this service, block new bookings.
+    // --- VALIDACIÓN DE CRUCE DE HORARIOS PARA EL PACIENTE ---
+    const { data: overlappingCitas, error: overlapError } = await supabase
+      .from('citas')
+      .select('id, hora_inicio, hora_fin')
+      .eq('paciente_id', citaData.paciente_id)
+      .eq('fecha_cita', citaData.fecha_cita)
+      .neq('estado_cita', 'Cancelado')
+      .neq('estado_cita', 'Cancelada');
+
+    if (overlapError) throw overlapError;
+
+    if (overlappingCitas && overlappingCitas.length > 0) {
+      const toMinutes = (timeStr) => {
+        if (!timeStr) return 0;
+        const [h, m] = timeStr.split(':').map(Number);
+        return h * 60 + m;
+      };
+
+      const propStart = toMinutes(citaData.hora_inicio);
+      const propEnd = toMinutes(citaData.hora_fin);
+
+      const hasOverlap = overlappingCitas.some(c => {
+        const cStart = toMinutes(c.hora_inicio);
+        const cEnd = toMinutes(c.hora_fin);
+        return propStart < cEnd && propEnd > cStart;
+      });
+
+      if (hasOverlap) {
+        return res.status(400).json({
+          success: false,
+          error: 'Ya tienes una cita agendada para este mismo día y hora. Por favor, selecciona otro horario.'
+        });
+      }
+    }
+
+    // --- LÓGICA DE CONTROL DE CAMBIO DE PSICÓLOGO CON ORDENACIÓN CRONOLÓGICA REAL ---
+    // Consultar todas las citas existentes no canceladas para este paciente y servicio
+    const { data: existingCitas, error: historyError } = await supabase
+      .from('citas')
+      .select('id, psicologo_id, psicologa_nombre, fecha_cita, hora_inicio, estado_cita')
+      .eq('paciente_id', citaData.paciente_id)
+      .eq('servicio', citaData.servicio)
+      .neq('estado_cita', 'Cancelado')
+      .neq('estado_cita', 'Cancelada');
+
+    if (historyError) throw historyError;
+
+    // Ordenar de forma ascendente
+    const sortedCitas = (existingCitas || []).sort((a, b) => {
+      const dateCmp = String(a.fecha_cita).localeCompare(String(b.fecha_cita));
+      if (dateCmp !== 0) return dateCmp;
+      return String(a.hora_inicio || '').localeCompare(String(b.hora_inicio || ''));
+    });
+
+    // Cita temporal para inserción virtual
+    const tempCitaId = 'temp-cita-new-' + Date.now();
+    const tempCita = {
+      id: tempCitaId,
+      psicologo_id: citaData.psicologo_id,
+      psicologa_nombre: citaData.psicologa_nombre,
+      fecha_cita: citaData.fecha_cita,
+      hora_inicio: citaData.hora_inicio
+    };
+
+    // Insertar la nueva cita en el orden correcto
+    const insertIndex = sortedCitas.findIndex(c => {
+      const dateCmp = String(c.fecha_cita).localeCompare(String(tempCita.fecha_cita));
+      if (dateCmp > 0) return true;
+      if (dateCmp === 0) {
+        return String(c.hora_inicio || '').localeCompare(String(tempCita.hora_inicio || '')) > 0;
+      }
+      return false;
+    });
+
+    if (insertIndex === -1) {
+      sortedCitas.push(tempCita);
+    } else {
+      sortedCitas.splice(insertIndex, 0, tempCita);
+    }
+
+    // Ubicar la posición de la nueva cita en el historial ordenado
+    const idx = sortedCitas.findIndex(c => c.id === tempCitaId);
+
+    let isSpecialistChange = false;
+    let psicologoAnteriorId = null;
+    let psicologoAnteriorNombre = '';
+    let totalUniqueCount = 1;
+
+    if (idx > 0) {
+      // Hay citas anteriores cronológicamente
+      const immediateAnterior = sortedCitas[idx - 1];
+      psicologoAnteriorId = immediateAnterior.psicologo_id;
+      psicologoAnteriorNombre = immediateAnterior.psicologa_nombre;
+
+      if (citaData.psicologo_id !== immediateAnterior.psicologo_id) {
+        isSpecialistChange = true;
+      }
+
+      // Obtener el conjunto de psicólogos únicos previos a esta cita
+      const priorCitas = sortedCitas.slice(0, idx);
+      const uniquePriorPsicologos = new Set(priorCitas.map(c => c.psicologo_id).filter(Boolean));
+      
+      // Sumar el especialista actual si no está en la historia previa
+      totalUniqueCount = uniquePriorPsicologos.has(citaData.psicologo_id) 
+        ? uniquePriorPsicologos.size 
+        : uniquePriorPsicologos.size + 1;
+    }
+
+    if (isSpecialistChange) {
+      if (totalUniqueCount >= 4) {
+        if (!citaData.justificacion_cambio_solicitud || !citaData.justificacion_cambio_solicitud.trim()) {
+          return res.status(400).json({
+            success: false,
+            error: 'Has superado el límite de cambios de especialista para este servicio. Debes ingresar un motivo obligatorio para enviar tu solicitud de aprobación.'
+          });
+        }
+        // Marcar la cita como pendiente
+        citaData.estado_cita = 'Pendiente';
+      }
+    }
+
+    // --- Block: one pending/unpaid session per service at a time ---
     const { data: pendingCita, error: pendingError } = await supabase
       .from('citas')
       .select('id')
       .eq('paciente_id', citaData.paciente_id)
       .eq('servicio', citaData.servicio)
+      .neq('estado_cita', 'Cancelado')
+      .neq('estado_cita', 'Cancelada')
+      .neq('estado_pago', 'Rechazado')
       .or('estado_cita.eq.Pendiente,estado_pago.eq.Pendiente')
       .limit(1);
 
@@ -127,26 +253,91 @@ export const postCrearCita = async (req, res) => {
       });
     }
 
-    // Compute next session number: count valid citas by chronological order
-    // (excluding Cancelada and Ausente); the next session is count + 1
+    // Calcular el número estático de sesión del paciente
     const { count: existingCount, error: sesError } = await supabase
       .from('citas')
       .select('*', { count: 'exact', head: true })
       .eq('paciente_id', citaData.paciente_id)
       .eq('servicio', citaData.servicio)
-      .not('estado_cita', 'in', '("Cancelada","Ausente")');
+      .not('estado_cita', 'in', '("Cancelado","Ausente")');
 
     if (sesError) throw sesError;
 
     citaData.numero_sesion = (existingCount || 0) + 1;
 
+    const { justificacion_cambio_solicitud, ...insertData } = citaData;
+
     const { data, error } = await supabase
       .from('citas')
-      .insert([citaData])
+      .insert([insertData])
       .select()
       .single();
 
     if (error) throw error;
+
+    // Si fue un cambio bloqueado, registrar la solicitud en `cambio_psicologo` y notificar por correo
+    if (isSpecialistChange && totalUniqueCount >= 4) {
+      try {
+        const { error: reqError } = await supabase
+          .from('cambio_psicologo')
+          .insert([{
+            cita_id: data.id,
+            paciente_id: citaData.paciente_id,
+            servicio: citaData.servicio,
+            psicologo_anterior_id: psicologoAnteriorId,
+            psicologo_nuevo_id: citaData.psicologo_id,
+            motivo: justificacion_cambio_solicitud,
+            estado: 'Pendiente'
+          }]);
+        if (reqError) {
+          console.error('Error al insertar en cambio_psicologo:', reqError.message);
+        }
+
+        // Obtener datos del paciente
+        const { data: pacienteInfo } = await supabase
+          .from('pacientes')
+          .select('nombres, apellido_paterno, apellido_materno, dni')
+          .eq('id_paciente', citaData.paciente_id)
+          .single();
+
+        if (pacienteInfo) {
+          const nombresPaciente = `${pacienteInfo.nombres || ''} ${pacienteInfo.apellido_paterno || ''} ${pacienteInfo.apellido_materno || ''}`.trim();
+          await sendSolicitudCambioPsicologoEmail({
+            nombresPaciente,
+            dniPaciente: pacienteInfo.dni,
+            servicio: citaData.servicio,
+            psicologoAnterior: psicologoAnteriorNombre,
+            psicologoNuevo: citaData.psicologa_nombre,
+            motivo: justificacion_cambio_solicitud
+          });
+        }
+      } catch (mailErr) {
+        console.error('Error al procesar notificación de cambio:', mailErr.message);
+      }
+    }
+
+    // Decrement credit if this cita uses an acquired package
+    if (citaData.paquete_id) {
+      const { data: packData, error: packFetchError } = await supabase
+        .from('paquetes_adquiridos')
+        .select('sesiones_disponibles')
+        .eq('id', citaData.paquete_id)
+        .single();
+
+      if (!packFetchError && packData) {
+        const newCount = Math.max(0, (packData.sesiones_disponibles || 0) - 1);
+        const { error: packUpdateError } = await supabase
+          .from('paquetes_adquiridos')
+          .update({ sesiones_disponibles: newCount })
+          .eq('id', citaData.paquete_id);
+        if (packUpdateError) {
+          console.error('Error al descontar crédito del paquete:', packUpdateError.message);
+        }
+      } else if (packFetchError) {
+        console.error('Error al leer crédito del paquete:', packFetchError.message);
+      }
+    }
+
     return res.json({ success: true, data });
   } catch (error) {
     console.error('Error en postCrearCita:', error.message);
@@ -165,7 +356,7 @@ export const getCitasDelDia = async (req, res) => {
       .from('citas')
       .select('psicologa_nombre, hora_inicio, hora_fin')
       .eq('fecha_cita', fecha)
-      .neq('estado_cita', 'cancelada');
+      .neq('estado_cita', 'Cancelado');
 
     if (error) throw error;
     return res.json({ success: true, data });
@@ -259,7 +450,7 @@ export const getCitasPsicologa = async (req, res) => {
       .select('*')
       .eq('psicologo_id', psicologoId)
       .eq('fecha_cita', fecha)
-      .neq('estado_cita', 'cancelada');
+      .neq('estado_cita', 'Cancelado');
 
     if (error) throw error;
     return res.json({ success: true, data });
@@ -305,7 +496,7 @@ export const putCancelarCita = async (req, res) => {
 
     const { data, error } = await supabase
       .from('citas')
-      .update({ estado_cita: 'Cancelada' })
+      .update({ estado_cita: 'Cancelado', estado_pago: 'Rechazado' })
       .eq('id', id)
       .select()
       .single();

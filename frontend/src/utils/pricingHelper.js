@@ -9,7 +9,10 @@
  * Flujo en cascada:
  * 1. Precio base: servicio (precio_sesion) o paquete (precio_total).
  * 2. Resuelve cargo/área del especialista desde asignaciones.
- * 3. Busca regla en reglas_precios que coincida por servicio_id + local + cargo.
+ * 3. Busca regla en reglas_precios con contexto estricto:
+ *    - PAQUETE: match por paquete_catalogo_id (nunca contamina desde reglas de sesión)
+ *    - SESIÓN: match por servicio_id, excluye reglas con paquete_catalogo_id != NULL
+ *    Ambos evalúan local + cargo cuando aplica.
  *    - SI HAY REGLA (Camino A): usa su precio. El descuento_porcentaje de la regla
  *      se valida solo con sus propias fechas, ignorando promociones del padre.
  *    - SI NO HAY REGLA (Camino B - Fallback): usa precio base y aplica promoción
@@ -77,6 +80,14 @@ export const obtenerPrecioAplicable = ({
   const specialistCargoNombre = (especialista?.cargo?.nombre || especialista?.cargo_nombre || '').toLowerCase();
 
   const matchingRule = (reglasPrecios || []).find(r => {
+    if (paqueteCatalogo) {
+      // Package context: match by paquete_catalogo_id.
+      // If rule defines a cargo_id, it only applies when the specialist has that same cargo.
+      return r.paquete_catalogo_id === paqueteCatalogo.id &&
+             (!r.cargo_id || r.cargo_id === especialista?.cargo_id);
+    }
+    // Individual session context: match by servicio_id, exclude rules belonging to a package
+    if (r.paquete_catalogo_id) return false;
     const matchServicio = r.servicio_id === servicio?.id;
     const matchLocal = !r.local_id || modalidad === 'Virtual' || r.local_id === resolvedLocalId;
     const matchCargo = !r.cargo_id || r.cargo_id === specialistCargoId || specialistCargoNombre.includes('doctor');

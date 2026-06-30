@@ -34,6 +34,17 @@ import PaymentMethodCard from '../components/PaymentMethodCard';
 
 // Helper functions are imported from '../utils/schedulerHelper' and '../utils/appointmentFormatters'
 
+// Helper to shorten specialist names (First Name + Father's Last Name)
+const obtenerNombreCorto = (nombreCompleto) => {
+  if (!nombreCompleto) return '';
+  const partes = nombreCompleto.trim().split(/\s+/);
+  if (partes.length <= 1) return nombreCompleto;
+  if (partes.length === 2) return `${partes[0]} ${partes[1]}`;
+  if (partes.length === 3) return `${partes[0]} ${partes[1]}`;
+  if (partes.length === 4) return `${partes[0]} ${partes[2]}`;
+  return `${partes[0]} ${partes[partes.length - 2]}`;
+};
+
 const BookAppointment = () => {
   const navigate = useNavigate();
   const { loading: loadingProfile, perfilUsuario, perfilClinicoPropio, perfilesDependientes } = usePacienteActual();
@@ -95,7 +106,7 @@ const BookAppointment = () => {
           supabase.from('empleados').select('*').eq('activo', true),
           supabase.from('psicologo_servicio').select('*'),
           supabase.from('horarios_empleados').select('*').gte('fecha', tomorrowStr),
-          supabase.from('citas').select('id, fecha_cita, hora_inicio, hora_fin, estado_cita, psicologo_id, habitacion_id, modalidad').gte('fecha_cita', tomorrowStr).in('estado_cita', ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta']),
+          supabase.from('citas').select('id, fecha_cita, hora_inicio, hora_fin, estado_cita, psicologo_id, habitacion_id, modalidad').gte('fecha_cita', tomorrowStr).in('estado_cita', ['Pendiente', 'Confirmado', 'Confirmada', 'Reprogramada', 'En consulta', 'En Consulta']),
           supabase.from('reglas_precios').select('*'),
           supabase.from('asignaciones_empleado').select('*'),
           supabase.from('areas').select('*').eq('activo', true),
@@ -182,7 +193,11 @@ const BookAppointment = () => {
         .from('citas')
         .select('servicio')
         .eq('paciente_id', pacienteId)
+        .neq('estado_cita', 'Cancelado')
+        .neq('estado_cita', 'Cancelada')
+        .neq('estado_pago', 'Rechazado')
         .or('estado_cita.eq.Pendiente,estado_pago.eq.Pendiente');
+
       if (!error && data) {
         setServiciosBloqueados(new Set(data.map(c => c.servicio)));
       }
@@ -228,6 +243,15 @@ const BookAppointment = () => {
   const [showCommentsModal, setShowCommentsModal] = useState(false);
   const [tempComentario, setTempComentario] = useState('');
   const [metodoPago, setMetodoPago] = useState('clinica'); // 'clinica' o 'tarjeta'
+
+  // Lógica de control de cambios de especialista
+  const [showFirstChangeModal, setShowFirstChangeModal] = useState(false);
+  const [showSecondChangeModal, setShowSecondChangeModal] = useState(false);
+  const [showBlockedChangeModal, setShowBlockedChangeModal] = useState(false);
+  const [tempEspecialista, setTempEspecialista] = useState(null);
+  const [lastPsychologist, setLastPsychologist] = useState(null);
+  const [comentarioCambio, setComentarioCambio] = useState('');
+  const [justificacionCambioSolicitud, setJustificacionCambioSolicitud] = useState('');
   const [metodosPagoClinica, setMetodosPagoClinica] = useState([]);
   const [loadingMetodosPago, setLoadingMetodosPago] = useState(false);
   const [metodoPagoOnlineDetalle, setMetodoPagoOnlineDetalle] = useState('TRANSFERENCIA');
@@ -298,7 +322,7 @@ const BookAppointment = () => {
             .from('citas')
             .select('*', { count: 'exact', head: true })
             .eq('paquete_id', p.id)
-            .in('estado_cita', ['Pendiente', 'Confirmada', 'Reprogramada']);
+            .in('estado_cita', ['Pendiente', 'Confirmado', 'Reprogramada']);
 
           if (countErr) throw countErr;
           const netas = p.sesiones_disponibles - (count || 0);
@@ -389,8 +413,8 @@ const BookAppointment = () => {
     return filtrarSlotsPorCapacidadLocal(slots, allCitasDelDia, localRooms, duracion);
   };
 
-  // 1. Check if a local has real availability for presencial modality
-  const checkLocalAvailability = (localId) => {
+  // 1. Check if a local has real availability for presencial/virtual modality
+  const checkLocalAvailability = (localId, currentModalidad = 'Presencial') => {
       const services = (dbData.servicios || []).filter(s => 
         s && (s.local_id === localId || (Array.isArray(s.locales_ids) && s.locales_ids.includes(localId)))
       );
@@ -405,7 +429,7 @@ const BookAppointment = () => {
     if (activeSpecialists.length === 0) return false;
 
     const schedules = (dbData.horarios || []).filter(h => 
-      h && h.modalidad === 'Presencial' && 
+      h && h.modalidad === currentModalidad && 
       h.local_id === localId && 
       specialistIds.includes(h.empleado_id) &&
       h.disponible &&
@@ -414,8 +438,11 @@ const BookAppointment = () => {
     );
     if (schedules.length === 0) return false;
 
-    const localRooms = (dbData.rooms || []).filter(r => r && r.local_id === localId && r.activo);
-    if (localRooms.length === 0) return false;
+    let localRooms = [];
+    if (currentModalidad === 'Presencial') {
+      localRooms = (dbData.rooms || []).filter(r => r && r.local_id === localId && r.activo);
+      if (localRooms.length === 0) return false;
+    }
 
     const groups = {};
     schedules.forEach(s => {
@@ -432,7 +459,9 @@ const BookAppointment = () => {
       const minDuration = Math.min(...services.map(s => s?.duracion_minutos || s?.duracion || 60));
       
       let slots = obtenerSlotsLibresDia(schedulesDelDia, citasDelDia, minDuration, BUFFER_MINUTOS);
-      slots = filtrarSlotsPorLocal(slots, fecha, localRooms, minDuration);
+      if (currentModalidad === 'Presencial') {
+        slots = filtrarSlotsPorLocal(slots, fecha, localRooms, minDuration);
+      }
 
       if (slots.length > 0) return true;
     }
@@ -444,11 +473,9 @@ const BookAppointment = () => {
   const checkServiceAvailability = (service, currentModalidad, localId) => {
     if (!service || !currentModalidad) return false;
     
-    if (currentModalidad === 'Presencial') {
-      if (!localId) return false;
-      const isAssociated = service.local_id === localId || (Array.isArray(service.locales_ids) && service.locales_ids.includes(localId));
-      if (!isAssociated) return false;
-    }
+    if (!localId) return false;
+    const isAssociated = service.local_id === localId || (Array.isArray(service.locales_ids) && service.locales_ids.includes(localId));
+    if (!isAssociated) return false;
 
     const specialistIds = (dbData.psicologoServicio || [])
       .filter(ps => ps && ps.servicio_id === service.id)
@@ -459,12 +486,13 @@ const BookAppointment = () => {
 
     const schedules = (dbData.horarios || []).filter(h => 
       h && h.modalidad === currentModalidad && 
-      (currentModalidad === 'Virtual' || h.local_id === localId) &&
+      h.local_id === localId &&
       specialistIds.includes(h.empleado_id) &&
       h.disponible &&
       h.tipo !== 'salida' &&
       h.tipo !== 'otro'
     );
+    console.log(`[checkServiceAvailability] Modo: ${currentModalidad} | Horarios encontrados: ${schedules.length} (localId: ${localId})`);
     if (schedules.length === 0) return false;
 
     let localRooms = [];
@@ -509,7 +537,7 @@ const BookAppointment = () => {
     const schedules = (dbData.horarios || []).filter(h => 
       h && h.empleado_id === specialist.id &&
       h.modalidad === currentModalidad && 
-      (currentModalidad === 'Virtual' || h.local_id === localId) &&
+      h.local_id === localId &&
       h.disponible &&
       h.tipo !== 'salida' &&
       h.tipo !== 'otro'
@@ -554,11 +582,11 @@ const BookAppointment = () => {
     
     const schedules = (dbData.horarios || []).filter(h => 
       h && h.empleado_id === psicologoId &&
-      h.modalidad === currentModalidad && 
-      (currentModalidad === 'Virtual' || h.local_id === localId) &&
       h.disponible &&
       h.tipo !== 'salida' &&
-      h.tipo !== 'otro'
+      h.tipo !== 'otro' &&
+      h.modalidad === currentModalidad && 
+      h.local_id === localId
     );
     if (schedules.length === 0) return null;
 
@@ -593,11 +621,11 @@ const BookAppointment = () => {
     
     const schedules = (dbData.horarios || []).filter(h => 
       h && h.empleado_id === psicologoId &&
-      h.modalidad === currentModalidad && 
-      (currentModalidad === 'Virtual' || h.local_id === localId) &&
       h.disponible &&
       h.tipo !== 'salida' &&
-      h.tipo !== 'otro'
+      h.tipo !== 'otro' &&
+      h.modalidad === currentModalidad && 
+      h.local_id === localId
     );
 
     let localRooms = [];
@@ -632,12 +660,12 @@ const BookAppointment = () => {
     
     const schedules = (dbData.horarios || []).filter(h => 
       h && h.empleado_id === psicologoId &&
-      h.modalidad === currentModalidad && 
       h.fecha === fechaStr &&
-      (currentModalidad === 'Virtual' || h.local_id === localId) &&
       h.disponible &&
       h.tipo !== 'salida' &&
-      h.tipo !== 'otro'
+      h.tipo !== 'otro' &&
+      h.modalidad === currentModalidad && 
+      h.local_id === localId
     );
 
     const citasDelDia = (dbData.citas || []).filter(c => 
@@ -662,7 +690,9 @@ const BookAppointment = () => {
     if (mod === 'Presencial') {
       return (dbData.locales || []).some(l => l && checkLocalAvailability(l.id));
     } else if (mod === 'Virtual') {
-      return (dbData.servicios || []).some(s => s && checkServiceAvailability(s, 'Virtual', null));
+      return (dbData.locales || []).some(l => 
+        l && (dbData.servicios || []).some(s => s && checkServiceAvailability(s, 'Virtual', l.id))
+      );
     }
     return false;
   };
@@ -682,18 +712,31 @@ const BookAppointment = () => {
       const esPsicologa = rol.includes('psicólog') || rol.includes('psicolog');
       if (!esPsicologa) return false;
 
+      const estaActiva = emp.activo && emp.ofrece_servicios !== false;
+      if (!estaActiva) return false;
+
       const tieneServicios = (dbData.psicologoServicio || []).some(ps =>
         ps && ps.psicologo_id === emp.id &&
         (dbData.servicios || []).some(s => s && s.id === ps.servicio_id && s.activo)
       );
       if (!tieneServicios) return false;
 
-      const estaActiva = emp.activo && emp.ofrece_servicios !== false;
-      if (!estaActiva) return false;
+      if (modalidad === 'Virtual') {
+        if (!localSeleccionado) return false;
+        const tieneBloquesVirtuales = (dbData.horarios || []).some(h =>
+          h && h.empleado_id === emp.id &&
+          h.modalidad === 'Virtual' &&
+          h.local_id === localSeleccionado.id &&
+          h.disponible &&
+          h.tipo !== 'salida' &&
+          h.tipo !== 'otro'
+        );
+        if (!tieneBloquesVirtuales) return false;
+      }
 
       return true;
     });
-  }, [dbData.employees, dbData.psicologoServicio, dbData.servicios]);
+  }, [dbData.employees, dbData.psicologoServicio, dbData.servicios, dbData.horarios, modalidad, localSeleccionado]);
 
   // Helper to map specialty area name for a specialist
   const getEspecialidadEspecialista = (empId) => {
@@ -702,24 +745,34 @@ const BookAppointment = () => {
       const area = (dbData.areas || []).find(ar => ar && ar.id === a.area_id);
       return area ? area.nombre : null;
     }).filter(Boolean);
-    return areaNames.length > 0 ? areaNames.join(', ') : 'Psicología General';
+    const areasUnicas = [...new Set(areaNames)];
+    return areasUnicas.length > 0 ? areasUnicas.join(', ') : 'Psicología General';
   };
 
   // Valid locals passing checkLocalAvailability
   const validLocales = useMemo(() => {
-    return (dbData.locales || []).filter(l => l && checkLocalAvailability(l.id));
-  }, [dbData.locales, dbData.horarios, dbData.citas, dbData.rooms, dbData.servicios, dbData.employees, dbData.psicologoServicio]);
+    const modToCheck = modalidad || 'Presencial';
+    return (dbData.locales || []).filter(l => l && checkLocalAvailability(l.id, modToCheck));
+  }, [dbData.locales, dbData.horarios, dbData.citas, dbData.rooms, dbData.servicios, dbData.employees, dbData.psicologoServicio, modalidad]);
+
+  // Locales with at least one active non-tramite service
+  const sedesConServicios = useMemo(() => {
+    return (dbData.locales || []).filter(local =>
+      (dbData.servicios || []).some(s =>
+        s && s.activo && !s.es_tramite &&
+        (s.local_id === local.id || (Array.isArray(s.locales_ids) && s.locales_ids.includes(local.id)))
+      )
+    );
+  }, [dbData.locales, dbData.servicios]);
 
   // Set default local if none selected or no longer valid
   useEffect(() => {
-    if (modalidad === 'Presencial' && validLocales.length > 0) {
+    if (validLocales.length > 0) {
       if (!localSeleccionado || !validLocales.some(l => l && l.id === localSeleccionado?.id)) {
         setLocalSeleccionado(validLocales[0]);
       }
-    } else if (modalidad === 'Virtual') {
-      setLocalSeleccionado(null);
     }
-  }, [modalidad, validLocales, localSeleccionado]);
+  }, [validLocales, localSeleccionado]);
 
   // Helper: true if service has any valid pricing (base, reglas_precios, or packages)
   const serviceHasPricing = (s) => {
@@ -743,6 +796,7 @@ const BookAppointment = () => {
     if (modoBusqueda === 'servicio') {
       return dbData.servicios.filter(s => {
         if (!s) return false;
+        if (s.es_tramite) return false;
         if (!serviceHasPricing(s)) return false;
         if (buscarServicio.trim() !== '') {
           const query = buscarServicio.toLowerCase();
@@ -750,6 +804,10 @@ const BookAppointment = () => {
             return false;
           }
         }
+
+        if (!localSeleccionado) return false;
+        const isAssociated = s.local_id === localSeleccionado.id || (Array.isArray(s.locales_ids) && s.locales_ids.includes(localSeleccionado.id));
+        if (!isAssociated) return false;
 
         const hasSpecialist = (especialistasElegibles || []).some(emp =>
           emp && (dbData.psicologoServicio || []).some(ps => ps && ps.psicologo_id === emp.id && ps.servicio_id === s.id)
@@ -763,11 +821,17 @@ const BookAppointment = () => {
       if (!psicologaSeleccionada) return [];
       return dbData.servicios.filter(s => {
         if (!s) return false;
+        if (s.es_tramite) return false;
         if (!serviceHasPricing(s)) return false;
         if (buscarServicio.trim() !== '') {
           const query = buscarServicio.toLowerCase();
           if (!(s.nombre_servicio || '').toLowerCase().includes(query)) return false;
         }
+        
+        if (!localSeleccionado) return false;
+        const isAssociated = s.local_id === localSeleccionado.id || (Array.isArray(s.locales_ids) && s.locales_ids.includes(localSeleccionado.id));
+        if (!isAssociated) return false;
+
         const offersService = (dbData.psicologoServicio || []).some(ps =>
           ps && ps.psicologo_id === psicologaSeleccionada.id && ps.servicio_id === s.id
         );
@@ -845,6 +909,8 @@ const BookAppointment = () => {
     setSlotsDisponibles([]);
     setFechasHabilitadas(new Set());
     setServicioExpandidoId(null);
+    setComentarioCambio('');
+    setJustificacionCambioSolicitud('');
   };
 
   const handleModalidadChange = (nuevaMod) => {
@@ -861,6 +927,8 @@ const BookAppointment = () => {
     setSlotsDisponibles([]);
     setFechasHabilitadas(new Set());
     setServicioExpandidoId(null);
+    setComentarioCambio('');
+    setJustificacionCambioSolicitud('');
     
     if (nuevaMod === 'Virtual') {
       setMetodoPago('tarjeta');
@@ -882,9 +950,9 @@ const BookAppointment = () => {
     setSlotsDisponibles([]);
     setFechasHabilitadas(new Set());
     setServicioExpandidoId(null);
+    setComentarioCambio('');
+    setJustificacionCambioSolicitud('');
   };
-
-
 
   const handleServiceHeaderClick = (service) => {
     if (!service) return;
@@ -899,11 +967,15 @@ const BookAppointment = () => {
       }
       setFechaSeleccionada(null);
       setSlotSeleccionado(null);
+      setComentarioCambio('');
+      setJustificacionCambioSolicitud('');
     } else if (estaBloqueado) {
       toast.error('Ya cuentas con una sesión pendiente para este servicio. Para agendar la siguiente sesión, debes concluir tu cita anterior.');
     } else {
       setServicioExpandidoId(service.id);
       setServicioSeleccionado(service);
+      setComentarioCambio('');
+      setJustificacionCambioSolicitud('');
       
       const resolvedPrice = obtenerPrecioAplicable({
         servicio: service,
@@ -932,14 +1004,77 @@ const BookAppointment = () => {
     }
   };
 
-
-
-  const handleEspecialistaChange = (nuevoEspecialista) => {
+  const handleEspecialistaChange = async (nuevoEspecialista) => {
+    setBookingError('');
     if (psicologaSeleccionada?.id === nuevoEspecialista?.id) return;
-    setPsicologaSeleccionada(nuevoEspecialista || null);
-    // NO cerrar el acordeón ni borrar el servicio seleccionado
-    
-    // Resets:
+    if (!nuevoEspecialista) {
+      setPsicologaSeleccionada(null);
+      resetHorariosState();
+      return;
+    }
+
+    const pacienteId = paraQuien === 'yo' ? perfilClinicoPropio?.id_paciente : familiarId;
+    if (!pacienteId || !servicioSeleccionado) {
+      setPsicologaSeleccionada(nuevoEspecialista);
+      resetHorariosState();
+      return;
+    }
+
+    try {
+      const { data: history, error } = await supabase
+        .from('citas')
+        .select('id, psicologo_id, psicologa_nombre, fecha_cita, hora_inicio, estado_cita')
+        .eq('paciente_id', pacienteId)
+        .eq('servicio', servicioSeleccionado.nombre_servicio)
+        .neq('estado_cita', 'Cancelado')
+        .neq('estado_cita', 'Cancelada')
+        .order('fecha_cita', { ascending: false })
+        .order('hora_inicio', { ascending: false });
+
+      if (error) throw error;
+
+      if (!history || history.length === 0) {
+        setPsicologaSeleccionada(nuevoEspecialista);
+        resetHorariosState();
+        return;
+      }
+
+      const ultimaCita = history[0];
+      if (ultimaCita.psicologo_id === nuevoEspecialista.id) {
+        setPsicologaSeleccionada(nuevoEspecialista);
+        resetHorariosState();
+        return;
+      }
+
+      const lastEmp = dbData.employees.find(e => e.id === ultimaCita.psicologo_id) || {
+        id: ultimaCita.psicologo_id,
+        nombres_apellidos: ultimaCita.psicologa_nombre
+      };
+      setLastPsychologist(lastEmp);
+      setTempEspecialista(nuevoEspecialista);
+
+      // Calcular cantidad de psicólogos únicos en el historial
+      const uniqueIds = new Set(history.map(c => c.psicologo_id).filter(Boolean));
+      const totalCount = uniqueIds.has(nuevoEspecialista.id) ? uniqueIds.size : uniqueIds.size + 1;
+
+      if (totalCount === 2) {
+        setShowFirstChangeModal(true);
+      } else if (totalCount === 3) {
+        setShowSecondChangeModal(true);
+      } else if (totalCount >= 4) {
+        setShowBlockedChangeModal(true);
+      } else {
+        setPsicologaSeleccionada(nuevoEspecialista);
+        resetHorariosState();
+      }
+    } catch (err) {
+      console.error('Error al verificar historial de cambios:', err);
+      setPsicologaSeleccionada(nuevoEspecialista);
+      resetHorariosState();
+    }
+  };
+
+  const resetHorariosState = () => {
     setFechaSeleccionada(null);
     setSlotSeleccionado(null);
     setSlotsDisponibles([]);
@@ -953,9 +1088,7 @@ const BookAppointment = () => {
         ? !esClinicoIncompletoYo
         : (familiarId !== '' && !esClinicoIncompletoFamiliar);
       if (!pacienteValid) return false;
-      if (modalidad === 'Virtual') return true;
-      if (modalidad === 'Presencial') return localSeleccionado !== null;
-      return false;
+      return localSeleccionado !== null;
     }
     if (currentStepId === 'servicio_psicologo') {
       if (!servicioSeleccionado) return false;
@@ -969,6 +1102,7 @@ const BookAppointment = () => {
   };
 
   const nextStep = () => {
+    setBookingError('');
     if (puedesAvanzar()) {
       const targetIndex = stepIndex + 1;
       if (targetIndex < steps.length) {
@@ -996,6 +1130,7 @@ const BookAppointment = () => {
   };
 
   const prevStep = () => {
+    setBookingError('');
     const targetIndex = stepIndex - 1;
     if (targetIndex >= 0) {
       setStepIndex(targetIndex);
@@ -1096,7 +1231,7 @@ const BookAppointment = () => {
       const priceVal = couponData ? precioConDescuento : precioFinalCalculado;
 
       let dbHabitacionId = null;
-      if (modalidad === 'Presencial' && activeLocal) {
+      if (activeLocal) {
         const { data: roomsData } = await supabase
           .from('habitaciones')
           .select('*')
@@ -1109,7 +1244,7 @@ const BookAppointment = () => {
             .from('citas')
             .select('hora_inicio, hora_fin, habitacion_id')
             .eq('fecha_cita', dateStr)
-            .in('estado_cita', ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta']);
+            .in('estado_cita', ['Pendiente', 'Confirmado', 'Confirmada', 'Reprogramada', 'En consulta', 'En Consulta']);
 
           const duracion = servicioSeleccionado?.duracion_minutos || servicioSeleccionado?.duracion || 60;
           const slotStart = parseTimeToMinutes(slotSeleccionado.hora_inicio);
@@ -1129,22 +1264,30 @@ const BookAppointment = () => {
         }
       }
 
+      const isRequestApproval = justificacionCambioSolicitud && justificacionCambioSolicitud.trim() !== '';
+
+      const cleanPsicologaNombre = `${psicologaSeleccionada.nombres || ''} ${psicologaSeleccionada.apellido_paterno || ''} ${psicologaSeleccionada.apellido_materno || ''}`.trim();
+
       const cita = {
         paciente_id: pacienteId,
         psicologo_id: psicologaSeleccionada.id,
-        psicologa_nombre: psicologaSeleccionada.nombres_apellidos,
+        psicologa_nombre: cleanPsicologaNombre,
         servicio: servicioSeleccionado.nombre_servicio,
         fecha_cita: dateStr,
         hora_inicio: slotSeleccionado.hora_inicio,
         hora_fin: slotSeleccionado.hora_fin,
         estado_cita: 'Pendiente',
         estado_pago: estadoPago,
-        metodo_pago: dbMetodoPago,
+        metodo_pago: null,
+        tipo_pago: dbMetodoPago,
         monto: priceVal,
         comentario_paciente: comentario,
         paquete_id: dbPaqueteId,
         modalidad: modalidad,
-        habitacion_id: dbHabitacionId
+        habitacion_id: dbHabitacionId,
+        local_id: activeLocal?.id || null,
+        comentario_cambio_psicologo: comentarioCambio,
+        justificacion_cambio_solicitud: justificacionCambioSolicitud
       };
 
       const res = await crearCita(cita);
@@ -1158,10 +1301,16 @@ const BookAppointment = () => {
   };
 
   const handleConfirmarReserva = async () => {
+    const isRequestApproval = justificacionCambioSolicitud && justificacionCambioSolicitud.trim() !== '';
+
     if (paqueteSeleccionado?.type === 'adquirido') {
       const res = await saveAppointment('Pagado', paqueteSeleccionado.metodo_pago);
       if (res.success) {
-        toast.success('Cita agendada correctamente utilizando tu paquete.', { duration: 4000 });
+        if (isRequestApproval) {
+          toast.success('Solicitud de cambio enviada. Tu cita ha sido registrada en estado pendiente de aprobación.', { duration: 6000 });
+        } else {
+          toast.success('Cita agendada correctamente utilizando tu paquete.', { duration: 4000 });
+        }
         navigate('/dashboard/appointments');
       } else {
         setBookingError(res.error || 'Error al guardar la cita.');
@@ -1169,6 +1318,9 @@ const BookAppointment = () => {
     } else if (metodoPago === 'tarjeta') {
       const res = await saveAppointment('Pendiente', 'Pago Online');
       if (res.success) {
+        if (isRequestApproval) {
+          toast.success('Solicitud de cambio enviada. Procediendo a registrar el pago online...', { duration: 4000 });
+        }
         setPaymentModalRedirectOnClose(true);
         setShowPaymentModal(true);
       } else {
@@ -1177,7 +1329,11 @@ const BookAppointment = () => {
     } else {
       const res = await saveAppointment('Pendiente', 'Pago en clínica');
       if (res.success) {
-        toast.success('Cita agendada correctamente. Recuerda realizar el pago en recepción el día de tu consulta.', { duration: 5000 });
+        if (isRequestApproval) {
+          toast.success('Solicitud de cambio enviada. Tu cita ha sido registrada en estado pendiente de aprobación.', { duration: 6000 });
+        } else {
+          toast.success('Cita agendada correctamente. Recuerda realizar el pago en recepción el día de tu consulta.', { duration: 5000 });
+        }
         navigate('/dashboard/appointments');
       } else {
         setBookingError(res.error || 'Error al guardar la cita.');
@@ -1727,7 +1883,7 @@ const BookAppointment = () => {
                     esClinicoIncompletoFamiliar={esClinicoIncompletoFamiliar}
                     isPresencialAvailable={isPresencialAvailable}
                     isVirtualAvailable={isVirtualAvailable}
-                    validLocales={validLocales}
+                    locales={sedesConServicios || []}
                     handlePacienteChange={handlePacienteChange}
                     handleModalidadChange={handleModalidadChange}
                     handleLocalChange={handleLocalChange}
@@ -1848,7 +2004,7 @@ const BookAppointment = () => {
                                   h.modalidad === modalidad &&
                                   h.disponible &&
                                   h.tipo !== 'salida' && h.tipo !== 'otro' &&
-                                  (modalidad === 'Virtual' || h.local_id === localSeleccionado?.id)
+                                  h.local_id === localSeleccionado?.id
                                 );
                                 return hasSchedule;
                               });
@@ -2504,6 +2660,191 @@ const BookAppointment = () => {
                 {paymentModalRedirectOnClose ? 'Finalizar' : 'Entendido'}
               </button>
             </footer>
+          </div>
+        </div>
+      )}
+
+      {/* Segundo Psicólogo (Primer Cambio) */}
+      {showFirstChangeModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+        >
+          <div 
+            className="relative bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden p-6 text-left animate-in zoom-in-95 duration-150 font-sans"
+          >
+            <div className="flex items-start gap-4 mb-5">
+              <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+                <span className="material-symbols-outlined text-2xl">help_outline</span>
+              </div>
+              <div>
+                <h4 className="font-bold text-base text-gray-900">
+                  ¿Deseas continuar con el cambio?
+                </h4>
+                <p className="text-xs text-gray-550 mt-1 leading-relaxed">
+                  Anteriormente habías seleccionado a un especialista diferente ({lastPsychologist ? obtenerNombreCorto(lastPsychologist.psicologa_nombre || lastPsychologist.nombres_apellidos) : 'otro especialista'}). Para cuidar la continuidad de tu terapia, recomendamos seguir con el mismo profesional.
+                </p>
+              </div>
+            </div>
+            <div className="w-full flex justify-center items-center gap-4 mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFirstChangeModal(false);
+                  if (lastPsychologist) {
+                    setPsicologaSeleccionada(lastPsychologist);
+                    resetHorariosState();
+                  }
+                }}
+                className="px-6 py-2 h-10 flex items-center justify-center text-sm font-medium border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-500 cursor-pointer text-center whitespace-nowrap"
+              >
+                Volver atrás
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFirstChangeModal(false);
+                  setPsicologaSeleccionada(tempEspecialista);
+                  resetHorariosState();
+                }}
+                className="px-6 py-2 h-10 flex items-center justify-center bg-[#003178] hover:bg-blue-900 text-white font-medium text-sm rounded-xl transition-all cursor-pointer text-center whitespace-nowrap"
+              >
+                Confirmar Cambio
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tercer Psicólogo (Segundo Cambio) */}
+      {showSecondChangeModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+        >
+          <div 
+            className="relative bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden p-6 text-left animate-in zoom-in-95 duration-150 font-sans"
+          >
+            <div className="flex items-start gap-4 mb-4">
+              <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
+                <span className="material-symbols-outlined text-2xl">warning</span>
+              </div>
+              <div>
+                <h4 className="font-bold text-base text-amber-800">
+                  Aviso importante de cambio
+                </h4>
+                <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                  Esta es la última vez que podrás cambiar de psicólogo para este servicio de forma automática. Si decides proceder, tu continuidad terapéutica podría verse afectada.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 mb-5">
+              <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wide">
+                Déjanos un comentario del porqué de tu cambio (Opcional)
+              </label>
+              <textarea
+                value={comentarioCambio}
+                onChange={e => setComentarioCambio(e.target.value)}
+                placeholder="Cuéntanos brevemente la razón de este cambio..."
+                rows="3"
+                className="w-full p-3 border border-gray-200 rounded-xl text-xs focus:border-[#003178] outline-none resize-none bg-slate-50/50"
+              />
+            </div>
+
+            <div className="w-full flex justify-center items-center gap-4 mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSecondChangeModal(false);
+                  setComentarioCambio('');
+                  if (lastPsychologist) {
+                    setPsicologaSeleccionada(lastPsychologist);
+                    resetHorariosState();
+                  }
+                }}
+                className="px-6 py-2 h-10 flex items-center justify-center text-sm font-medium border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-500 cursor-pointer text-center whitespace-nowrap"
+              >
+                Volver atrás
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSecondChangeModal(false);
+                  setPsicologaSeleccionada(tempEspecialista);
+                  resetHorariosState();
+                }}
+                className="px-6 py-2 h-10 flex items-center justify-center bg-[#003178] hover:bg-blue-900 text-white font-medium text-sm rounded-xl transition-all cursor-pointer text-center whitespace-nowrap"
+              >
+                Continuar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cuarto Psicólogo o Más (Cambio Bloqueado) */}
+      {showBlockedChangeModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+        >
+          <div 
+            className="relative bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden p-6 text-left animate-in zoom-in-95 duration-150 font-sans"
+          >
+            <div className="flex items-start gap-4 mb-4">
+              <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center text-red-600 shrink-0">
+                <span className="material-symbols-outlined text-2xl">block</span>
+              </div>
+              <div>
+                <h4 className="font-bold text-base text-red-700">
+                  Límite de cambios superado
+                </h4>
+                <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                  Has superado el límite de cambios de especialista para este servicio. Para proceder con un nuevo psicólogo, debes enviar una solicitud de revisión a administración.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 mb-5">
+              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1">
+                Escribe el motivo detallado de tu cambio <span className="text-red-500 font-bold">*</span>
+              </label>
+              <textarea
+                required
+                value={justificacionCambioSolicitud}
+                onChange={e => setJustificacionCambioSolicitud(e.target.value)}
+                placeholder="Escribe el motivo detallado del cambio aquí (Obligatorio)..."
+                rows="4"
+                className="w-full p-3 border border-gray-200 rounded-xl text-xs focus:border-red-500 focus:ring-1 focus:ring-red-100 outline-none resize-none bg-slate-50/50"
+              />
+            </div>
+
+            <div className="w-full flex justify-center items-center gap-4 mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBlockedChangeModal(false);
+                  setJustificacionCambioSolicitud('');
+                  if (lastPsychologist) {
+                    setPsicologaSeleccionada(lastPsychologist);
+                    resetHorariosState();
+                  }
+                }}
+                className="px-6 py-2 h-10 flex items-center justify-center text-sm font-medium border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-500 cursor-pointer text-center whitespace-nowrap"
+              >
+                Volver atrás
+              </button>
+              <button
+                type="button"
+                disabled={!justificacionCambioSolicitud.trim()}
+                onClick={() => {
+                  setShowBlockedChangeModal(false);
+                  setPsicologaSeleccionada(tempEspecialista);
+                  resetHorariosState();
+                }}
+                className="px-6 py-2 h-10 flex items-center justify-center bg-red-600 hover:bg-red-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-medium text-sm rounded-xl transition-all cursor-pointer text-center whitespace-nowrap"
+              >
+                Enviar solicitud
+              </button>
+            </div>
           </div>
         </div>
       )}

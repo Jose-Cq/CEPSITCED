@@ -95,26 +95,37 @@ const DashboardHome = () => {
 
   const hoyStr = new Date().toISOString().split('T')[0];
   
-  const ESTADOS_ACTIVOS = ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta'];
+  const ESTADOS_ACTIVOS = ['Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'];
 
   // Buscar la cita futura más próxima (incluye citas de hoy)
   const proximaCita = appointments
     .filter(cita => cita.fecha_cita >= hoyStr && ESTADOS_ACTIVOS.includes(cita.estado_cita))
     .sort((a, b) => new Date(`${a.fecha_cita}T${a.hora_inicio}`) - new Date(`${b.fecha_cita}T${b.hora_inicio}`))[0];
 
+  const getEstadoDisplay = (estado) => {
+    const mapping = {
+      'En consulta': 'Confirmado',
+      'En Consulta': 'Confirmado',
+      'Confirmada': 'Confirmado'
+    };
+    return mapping[estado] || estado;
+  };
+
   const getCitaStateBadge = (estado) => {
+    const displayEstado = getEstadoDisplay(estado);
     const badges = {
       Pendiente: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
+      Confirmado: { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200' },
       Confirmada: { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200' },
       Realizada: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-200' },
       Completada: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-200' },
-      Cancelada: { bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-200' },
+      Cancelado: { bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-200' },
       Reprogramada: { bg: 'bg-purple-50', text: 'text-purple-800', border: 'border-purple-200' },
     };
-    const style = badges[estado] || badges.Pendiente;
+    const style = badges[displayEstado] || badges.Pendiente;
     return (
       <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium border ${style.bg} ${style.text} ${style.border} capitalize`}>
-        {estado}
+        {displayEstado}
       </span>
     );
   };
@@ -123,7 +134,7 @@ const DashboardHome = () => {
   const currentError = profileError || error;
 
   const appointmentsHistorial = appointments.filter(cita =>
-    ['Pendiente', 'Confirmada', 'Reprogramada', 'En consulta', 'Completada', 'Realizada', 'Atendida', 'Ausente'].includes(cita.estado_cita)
+    ['Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta', 'Completada', 'Realizada', 'Atendido', 'Ausente'].includes(cita.estado_cita)
   );
 
   return (

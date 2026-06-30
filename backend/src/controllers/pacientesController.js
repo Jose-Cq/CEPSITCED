@@ -373,8 +373,32 @@ export const getDocumentosPaciente = async (req, res) => {
 
     const { data, error } = await supabase
       .from('tramites_documentales')
-      .select('*')
+      .select(`
+        *,
+        pacientes (
+          nombres,
+          apellido_paterno,
+          apellido_materno
+        ),
+        servicios (
+          nombre_servicio
+        ),
+        empleados (
+          nombres,
+          apellido_paterno,
+          apellido_materno,
+          asignaciones_empleado (
+            areas (
+              nombre
+            ),
+            cargos (
+              nombre
+            )
+          )
+        )
+      `)
       .eq('paciente_id', id)
+      .eq('habilitar_visualizacion', true)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
