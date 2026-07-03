@@ -11,22 +11,21 @@ export const escapeHtml = (unsafe) => {
     .replace(/'/g, "&#039;");
 };
 
-// Configuración de SMTP para Seguridad / Alertas
-const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
-const smtpUser = process.env.GMAIL_USER_SEGURIDAD || process.env.SMTP_USER;
-const smtpPass = process.env.GMAIL_PASS_SEGURIDAD || process.env.SMTP_PASS;
-const smtpFrom = process.env.SMTP_FROM || `"CEPSITCED Seguridad" <${smtpUser}>`;
+// Forzar el uso de las credenciales activas del sistema si las de seguridad vienen undefined
+const finalUser = process.env.GMAIL_USER_SEGURIDAD || process.env.SMTP_USER;
+const finalPass = process.env.GMAIL_PASS_SEGURIDAD || process.env.SMTP_PASS;
 
 export const transporterSeguridad = nodemailer.createTransport({
-  host: smtpHost,
-  port: smtpPort,
-  secure: smtpPort === 465,
+  host: process.env.SMTP_HOST || "smtp.gmail.com",
+  port: parseInt(process.env.SMTP_PORT || "587"),
+  secure: false, // true para puerto 465, false para otros puertos como 587
   auth: {
-    user: smtpUser,
-    pass: smtpPass
+    user: finalUser,
+    pass: finalPass ? finalPass.replace(/\s/g, "") : ""
   }
 });
+
+const smtpFrom = process.env.SMTP_FROM || `"CEPSITCED Seguridad" <${finalUser}>`;
 
 /**
  * Envía un correo de verificación de cuenta nueva.
