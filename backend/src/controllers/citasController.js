@@ -377,7 +377,7 @@ export const postCrearCita = async (req, res) => {
         // Session #2+: Pre-paid by package balance
         citaData.estado_cita = 'Pendiente';
         citaData.estado_pago = 'Pagado';
-        citaData.metodo_pago = 'Saldo de Paquete';
+        citaData.metodo_pago = null;
         citaData.tipo_pago = 'Saldo de Paquete';
       }
     } else {
@@ -388,7 +388,7 @@ export const postCrearCita = async (req, res) => {
       } else {
         chosenMethod = 'Pago Online';
       }
-      citaData.metodo_pago = chosenMethod;
+      citaData.metodo_pago = null;
       citaData.tipo_pago = chosenMethod;
     }
 
