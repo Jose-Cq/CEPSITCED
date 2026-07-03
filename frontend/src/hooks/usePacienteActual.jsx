@@ -55,17 +55,14 @@ export const PacienteProvider = ({ children }) => {
       const dependientes = dependientesCompleto.filter(d => !d.id_perfil_propio);
       setPerfilesDependientes(dependientes);
 
-      // 5. Validar que exista al menos algún registro clínico (propio o dependientes)
-      // Si la carga terminó y no hay ningún registro en pacientes, lanzar el mensaje específico
-      if (!clinicoPropio && (!dependientes || dependientes.length === 0)) {
-        // Solo lanzar error si ya no estamos en reintentos
-        if (retryCount >= 3 || (!perfilAcc)) {
-          setError("No se encontró tu perfil de paciente");
-        } else {
-          // Reintentar una vez más
+      // 5. Si no se encontró el perfil de cuenta principal, reintentar o lanzar error
+      if (!perfilAcc) {
+        if (retryCount < 3) {
           isRetrying = true;
           setTimeout(() => cargarDatos(retryCount + 1), 1000);
           return;
+        } else {
+          setError("No se encontró tu perfil de usuario");
         }
       }
 

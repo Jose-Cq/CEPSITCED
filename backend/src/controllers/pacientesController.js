@@ -162,19 +162,63 @@ export const postRegistrarPerfil = async (req, res) => {
 export const getPerfilActual = async (req, res) => {
   const authId = req.user.id;
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('perfiles')
       .select('*')
       .eq('id', authId)
       .maybeSingle();
 
     if (error) throw error;
+
+    // Fallback de autogeneración de perfil si no existe pero la sesión es válida en Supabase Auth
+    if (!data) {
+      console.log(`[getPerfilActual] Perfil no encontrado para usuario ${authId}. Intentando autogenerar fallback...`);
+      const { data: authUser, error: authUserErr } = await supabase.auth.admin.getUserById(authId);
+      if (!authUserErr && authUser?.user) {
+        const user = authUser.user;
+        const meta = user.user_metadata || {};
+        const nombres = meta.nombres || user.email?.split('@')[0] || 'Usuario';
+        
+        let finalDni = meta.dni;
+        if (!finalDni) {
+          const { data: pac } = await supabase
+            .from('pacientes')
+            .select('dni')
+            .eq('correo', user.email)
+            .maybeSingle();
+          finalDni = pac?.dni || `GEN_${authId.substring(0, 8)}`;
+        }
+        
+        const { data: newPerfil, error: insErr } = await supabase
+          .from('perfiles')
+          .insert([{
+            id: authId,
+            dni: finalDni,
+            nombres: nombres,
+            apellido_paterno: meta.apellido_paterno || 'CEPSITCED',
+            apellido_materno: meta.apellido_materno || '',
+            correo: user.email,
+            activo: true
+          }])
+          .select()
+          .maybeSingle();
+
+        if (!insErr && newPerfil) {
+          console.log(`[getPerfilActual] Perfil autogenerado con éxito para ${user.email}`);
+          data = newPerfil;
+        } else {
+          console.error('[getPerfilActual] Falló la inserción del fallback de perfil:', insErr?.message);
+        }
+      }
+    }
+
     return res.json({ success: true, data });
   } catch (error) {
     console.error('Error al obtener perfil actual:', error.message);
     return res.status(500).json({ success: false, error: error.message });
   }
 };
+
 
 export const postRegistrarPaciente = async (req, res) => {
   const pacienteData = req.body;
@@ -273,13 +317,93 @@ export const postRegistrarPaciente = async (req, res) => {
 export const getPacienteActual = async (req, res) => {
   const authId = req.user.id;
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('pacientes')
       .select('*')
       .eq('id_perfil_propio', authId)
       .maybeSingle();
 
     if (error) throw error;
+
+    // Fallback de autogeneración: si no existe la ficha clínica pero sí el perfil,
+    // creamos o vinculamos la ficha clínica automáticamente para evitar bloquear al usuario.
+    if (!data) {
+      console.log(`[getPacienteActual] Ficha clínica no encontrada para perfil ${authId}. Intentando autogenerar/vincular fallback...`);
+      const { data: perfil, error: perfilErr } = await supabase
+        .from('perfiles')
+        .select('*')
+        .eq('id', authId)
+        .maybeSingle();
+
+      if (!perfilErr && perfil) {
+        try {
+          // 1. Verificar si ya existe una ficha clínica por DNI
+          const { data: existente, error: extErr } = await supabase
+            .from('pacientes')
+            .select('*')
+            .eq('dni', perfil.dni)
+            .maybeSingle();
+
+          if (!extErr && existente) {
+            console.log(`[getPacienteActual] Se encontró ficha clínica huérfana con DNI ${perfil.dni}. Vinculando...`);
+            const { data: updatedPaciente, error: updErr } = await supabase
+              .from('pacientes')
+              .update({
+                id_perfil_propio: authId,
+                nombres: perfil.nombres || existente.nombres,
+                apellido_paterno: perfil.apellido_paterno || existente.apellido_paterno,
+                apellido_materno: perfil.apellido_materno || existente.apellido_materno,
+                telefono: perfil.telefono || existente.telefono,
+                correo: perfil.correo || existente.correo
+              })
+              .eq('id_paciente', existente.id_paciente)
+              .select()
+              .maybeSingle();
+
+            if (!updErr && updatedPaciente) {
+              console.log(`[getPacienteActual] Ficha clínica vinculada con éxito.`);
+              data = updatedPaciente;
+            } else {
+              console.error('[getPacienteActual] Falló la vinculación de la ficha clínica:', updErr?.message);
+            }
+          } else {
+            // 2. Si no existe, creamos una nueva ficha
+            const generatedHCs = [];
+            const birthDate = perfil.fecha_nacimiento || '2000-01-01';
+            const patientHC = await generarSiguienteHC(supabase, birthDate, 'Masculino', generatedHCs);
+
+            const { data: newPaciente, error: insErr } = await supabase
+              .from('pacientes')
+              .insert([{
+                numero_hc: patientHC,
+                dni: perfil.dni,
+                genero: 'Masculino', // Valor por defecto
+                fecha_nacimiento: birthDate,
+                telefono: perfil.telefono || null,
+                correo: perfil.correo,
+                nombres: perfil.nombres,
+                apellido_paterno: perfil.apellido_paterno,
+                apellido_materno: perfil.apellido_materno,
+                estado_cuenta: 'INDEPENDIENTE',
+                id_perfil_propio: authId,
+                id_apoderado: null
+              }])
+              .select()
+              .maybeSingle();
+
+            if (!insErr && newPaciente) {
+              console.log(`[getPacienteActual] Ficha clínica autogenerada con éxito: HC ${patientHC}`);
+              data = newPaciente;
+            } else {
+              console.error('[getPacienteActual] Falló la inserción del fallback de paciente:', insErr?.message);
+            }
+          }
+        } catch (genErr) {
+          console.error('[getPacienteActual] Error al autogenerar ficha clínica:', genErr.message);
+        }
+      }
+    }
+
     const mapped = data ? { ...data, id: data.id_paciente } : null;
     return res.json({ success: true, data: mapped });
   } catch (error) {
@@ -287,6 +411,7 @@ export const getPacienteActual = async (req, res) => {
     return res.status(500).json({ success: false, error: error.message });
   }
 };
+
 
 // Actualizar paciente
 export const putActualizarPaciente = async (req, res) => {

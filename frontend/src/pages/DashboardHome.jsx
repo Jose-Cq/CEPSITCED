@@ -165,6 +165,26 @@ const DashboardHome = () => {
       {!loading && !currentError && (
         <div className="space-y-8 animate-fade-in">
           
+          {/* Alerta de Ficha Clínica Incompleta */}
+          {!perfilClinicoPropio && (
+            <div className="bg-amber-55 border border-amber-200 rounded-xl p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-sm animate-fade-in">
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined text-amber-600 shrink-0 mt-0.5">warning</span>
+                <div>
+                  <p className="text-sm font-bold text-amber-900 uppercase tracking-wide">Ficha Clínica Incompleta</p>
+                  <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                    Para poder agendar citas y gestionar tu historial completo, es necesario que completes tus datos clínicos en tu perfil.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate('/dashboard/profile')}
+                className="bg-[#003178] hover:bg-blue-900 text-white font-bold text-xs px-4 py-2.5 rounded-lg transition-all shrink-0 cursor-pointer uppercase tracking-wider"
+              >
+                Completar Perfil
+              </button>
+            </div>
+          )}
           {/* Welcome Banner */}
           {proximaCita ? (
             <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-[#003178] to-[#0052a3] p-8 text-white shadow-lg border border-blue-500/20 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
