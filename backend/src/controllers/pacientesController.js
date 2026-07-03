@@ -575,6 +575,21 @@ export const registrarPacienteConsolidado = async (req, res) => {
   try {
     const patientDniClean = String(patientData?.dni || '').replace(/\D/g, '');
     const proxyDniClean = isProxy ? String(proxyData?.dni || '').replace(/\D/g, '') : '';
+    const isPeru = String(patientData?.pais || '').trim().toLowerCase().startsWith('per');
+
+    console.log('[registrarPacienteConsolidado] Iniciando registro:', {
+      isProxy,
+      patientDniClean,
+      proxyDniClean,
+      isPeru,
+      patientLocation: {
+        pais: patientData?.pais,
+        departamento: patientData?.departamento,
+        provincia: patientData?.provincia,
+        distrito: patientData?.distrito,
+        direccion: patientData?.direccion
+      }
+    });
 
     if (!patientDniClean) {
       return res.status(400).json({ success: false, error: 'El DNI del paciente es obligatorio.' });
@@ -659,9 +674,9 @@ export const registrarPacienteConsolidado = async (req, res) => {
             genero: patientData.genero,
             fecha_nacimiento: patientData.fechaNacimiento,
             pais: toTitleCase(patientData.pais) || pacienteExistente.pais,
-            departamento: patientData.pais === 'Perú' ? (toTitleCase(patientData.departamento) || pacienteExistente.departamento) : null,
-            provincia: patientData.pais === 'Perú' ? (toTitleCase(patientData.provincia) || pacienteExistente.provincia) : null,
-            distrito: patientData.pais === 'Perú' ? (toTitleCase(patientData.distrito) || pacienteExistente.distrito) : null,
+            departamento: isPeru ? (toTitleCase(patientData.departamento) || pacienteExistente.departamento) : null,
+            provincia: isPeru ? (toTitleCase(patientData.provincia) || pacienteExistente.provincia) : null,
+            distrito: isPeru ? (toTitleCase(patientData.distrito) || pacienteExistente.distrito) : null,
             direccion: toTitleCase(patientData.direccion) || pacienteExistente.direccion,
             lugar_familia: toTitleCase(patientData.lugarFamilia) || pacienteExistente.lugar_familia,
             estado_civil: toTitleCase(patientData.estadoCivil) || pacienteExistente.estado_civil,
@@ -697,9 +712,9 @@ export const registrarPacienteConsolidado = async (req, res) => {
                 apellido_paterno: toTitleCase(patientData.apellidoPaterno) || null,
                 apellido_materno: toTitleCase(patientData.apellidoMaterno) || null,
                 pais: toTitleCase(patientData.pais) || null,
-                departamento: patientData.pais === 'Perú' ? toTitleCase(patientData.departamento) : null,
-                provincia: patientData.pais === 'Perú' ? toTitleCase(patientData.provincia) : null,
-                distrito: patientData.pais === 'Perú' ? toTitleCase(patientData.distrito) : null,
+                departamento: isPeru ? toTitleCase(patientData.departamento) : null,
+                provincia: isPeru ? toTitleCase(patientData.provincia) : null,
+                distrito: isPeru ? toTitleCase(patientData.distrito) : null,
                 estado_cuenta: 'INDEPENDIENTE',
                 id_perfil_propio: authId,
                 id_apoderado: null
@@ -801,6 +816,10 @@ export const registrarPacienteConsolidado = async (req, res) => {
             genero: proxyData.genero,
             fecha_nacimiento: proxyData.fechaNacimiento,
             direccion: toTitleCase(patientData.direccion) || apoderadoExistente.direccion,
+            pais: toTitleCase(patientData.pais) || apoderadoExistente.pais,
+            departamento: isPeru ? (toTitleCase(patientData.departamento) || apoderadoExistente.departamento) : null,
+            provincia: isPeru ? (toTitleCase(patientData.provincia) || apoderadoExistente.provincia) : null,
+            distrito: isPeru ? (toTitleCase(patientData.distrito) || apoderadoExistente.distrito) : null,
             estado_cuenta: 'INDEPENDIENTE'
           })
           .eq('id_paciente', apoderadoExistente.id_paciente);
@@ -828,9 +847,9 @@ export const registrarPacienteConsolidado = async (req, res) => {
                 apellido_paterno: toTitleCase(proxyData.apellidoPaterno) || null,
                 apellido_materno: toTitleCase(proxyData.apellidoMaterno) || null,
                 pais: toTitleCase(patientData.pais) || null,
-                departamento: patientData.pais === 'Perú' ? toTitleCase(patientData.departamento) : null,
-                provincia: patientData.pais === 'Perú' ? toTitleCase(patientData.provincia) : null,
-                distrito: patientData.pais === 'Perú' ? toTitleCase(patientData.distrito) : null,
+                departamento: isPeru ? toTitleCase(patientData.departamento) : null,
+                provincia: isPeru ? toTitleCase(patientData.provincia) : null,
+                distrito: isPeru ? toTitleCase(patientData.distrito) : null,
                 estado_cuenta: 'INDEPENDIENTE',
                 id_perfil_propio: authId,
                 id_apoderado: null
@@ -877,6 +896,10 @@ export const registrarPacienteConsolidado = async (req, res) => {
             genero: patientData.genero,
             fecha_nacimiento: patientData.fechaNacimiento,
             direccion: toTitleCase(patientData.direccion) || pacienteExistente.direccion,
+            pais: toTitleCase(patientData.pais) || pacienteExistente.pais,
+            departamento: isPeru ? (toTitleCase(patientData.departamento) || pacienteExistente.departamento) : null,
+            provincia: isPeru ? (toTitleCase(patientData.provincia) || pacienteExistente.provincia) : null,
+            distrito: isPeru ? (toTitleCase(patientData.distrito) || pacienteExistente.distrito) : null,
             lugar_familia: toTitleCase(patientData.lugarFamilia) || pacienteExistente.lugar_familia,
             estado_civil: toTitleCase(patientData.estadoCivil) || pacienteExistente.estado_civil,
             grado_instruccion: toTitleCase(patientData.gradoInstruccion) || pacienteExistente.grado_instruccion,
@@ -910,9 +933,9 @@ export const registrarPacienteConsolidado = async (req, res) => {
                 apellido_paterno: toTitleCase(patientData.apellidoPaterno) || null,
                 apellido_materno: toTitleCase(patientData.apellidoMaterno) || null,
                 pais: toTitleCase(patientData.pais) || null,
-                departamento: patientData.pais === 'Perú' ? toTitleCase(patientData.departamento) : null,
-                provincia: patientData.pais === 'Perú' ? toTitleCase(patientData.provincia) : null,
-                distrito: patientData.pais === 'Perú' ? toTitleCase(patientData.distrito) : null,
+                departamento: isPeru ? toTitleCase(patientData.departamento) : null,
+                provincia: isPeru ? toTitleCase(patientData.provincia) : null,
+                distrito: isPeru ? toTitleCase(patientData.distrito) : null,
                 estado_cuenta: 'STANDBY',
                 id_perfil_propio: null,
                 id_apoderado: authId,
