@@ -41,7 +41,7 @@ const Appointments = ({ onNavigate }) => {
       if (res.success) {
         toast.success('Cita cancelada correctamente.');
         setAppointments(prev =>
-          prev.map(c => (c.id === citaId ? { ...c, estado_cita: 'Cancelado' } : c))
+          prev.map(c => (c.id === citaId ? { ...c, estado_cita: 'Cancelado', estado_pago: 'Cancelado' } : c))
         );
       } else {
         toast.error('Error al cancelar la cita: ' + res.error);

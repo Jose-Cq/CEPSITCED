@@ -1201,7 +1201,9 @@ const BookAppointment = () => {
         ? !esClinicoIncompletoYo
         : (familiarId !== '' && !esClinicoIncompletoFamiliar);
       if (!pacienteValid) return false;
-      return localSeleccionado !== null;
+      if (!modalidad) return false;
+      if (modalidad === 'Presencial' && !localSeleccionado) return false;
+      return true;
     }
     if (currentStepId === 'servicio_psicologo') {
       if (!servicioSeleccionado) return false;
