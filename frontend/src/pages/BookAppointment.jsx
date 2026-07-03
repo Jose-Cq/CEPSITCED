@@ -251,7 +251,9 @@ const BookAppointment = () => {
   const [tempEspecialista, setTempEspecialista] = useState(null);
   const [lastPsychologist, setLastPsychologist] = useState(null);
   const [comentarioCambio, setComentarioCambio] = useState('');
-  const [justificacionCambioSolicitud, setJustificacionCambioSolicitud] = useState('');
+  const [receptionPhone, setReceptionPhone] = useState('');
+  const [cambiosEspecialistaCount, setCambiosEspecialistaCount] = useState(0);
+  
   const [metodosPagoClinica, setMetodosPagoClinica] = useState([]);
   const [loadingMetodosPago, setLoadingMetodosPago] = useState(false);
   const [metodoPagoOnlineDetalle, setMetodoPagoOnlineDetalle] = useState('TRANSFERENCIA');
@@ -295,7 +297,16 @@ const BookAppointment = () => {
     cargarMetodosPago();
   }, []);
 
-  // Fetch catalog packages when service changes
+  // Set default active payment method detail when metodosPagoClinica loads
+  useEffect(() => {
+    if (metodosPagoClinica && metodosPagoClinica.length > 0) {
+      const activeTypes = [...new Set(metodosPagoClinica.map(m => m.tipo))];
+      if (activeTypes.length > 0 && !activeTypes.includes(metodoPagoOnlineDetalle)) {
+        setMetodoPagoOnlineDetalle(activeTypes[0]);
+      }
+    }
+  }, [metodosPagoClinica, metodoPagoOnlineDetalle]);
+
   // Fetch active patient prepaid packages once on patient change
   useEffect(() => {
     const cargarPaquetesPaciente = async () => {
@@ -492,7 +503,6 @@ const BookAppointment = () => {
       h.tipo !== 'salida' &&
       h.tipo !== 'otro'
     );
-    console.log(`[checkServiceAvailability] Modo: ${currentModalidad} | Horarios encontrados: ${schedules.length} (localId: ${localId})`);
     if (schedules.length === 0) return false;
 
     let localRooms = [];
@@ -910,7 +920,6 @@ const BookAppointment = () => {
     setFechasHabilitadas(new Set());
     setServicioExpandidoId(null);
     setComentarioCambio('');
-    setJustificacionCambioSolicitud('');
   };
 
   const handleModalidadChange = (nuevaMod) => {
@@ -928,7 +937,6 @@ const BookAppointment = () => {
     setFechasHabilitadas(new Set());
     setServicioExpandidoId(null);
     setComentarioCambio('');
-    setJustificacionCambioSolicitud('');
     
     if (nuevaMod === 'Virtual') {
       setMetodoPago('tarjeta');
@@ -951,10 +959,9 @@ const BookAppointment = () => {
     setFechasHabilitadas(new Set());
     setServicioExpandidoId(null);
     setComentarioCambio('');
-    setJustificacionCambioSolicitud('');
   };
 
-  const handleServiceHeaderClick = (service) => {
+  const handleServiceHeaderClick = async (service) => {
     if (!service) return;
     const estaBloqueado = serviciosBloqueados.has(service.nombre_servicio);
     if (servicioExpandidoId === service.id) {
@@ -968,14 +975,14 @@ const BookAppointment = () => {
       setFechaSeleccionada(null);
       setSlotSeleccionado(null);
       setComentarioCambio('');
-      setJustificacionCambioSolicitud('');
+      setReceptionPhone('');
     } else if (estaBloqueado) {
       toast.error('Ya cuentas con una sesión pendiente para este servicio. Para agendar la siguiente sesión, debes concluir tu cita anterior.');
     } else {
       setServicioExpandidoId(service.id);
       setServicioSeleccionado(service);
       setComentarioCambio('');
-      setJustificacionCambioSolicitud('');
+      setReceptionPhone('');
       
       const resolvedPrice = obtenerPrecioAplicable({
         servicio: service,
@@ -990,7 +997,40 @@ const BookAppointment = () => {
 
       setTipoSesion(resolvedPrice > 0 ? 'normal' : 'paquete');
       setPaqueteSeleccionado(null);
-      if (psicologaSeleccionada) {
+
+      // Pre-select the last active psychologist for this service
+      const pacienteId = paraQuien === 'yo' ? perfilClinicoPropio?.id_paciente : familiarId;
+      if (pacienteId && !psicologaSeleccionada) {
+        try {
+          const { data: history, error } = await supabase
+            .from('citas')
+            .select('id, psicologo_id, psicologa_nombre, fecha_cita, hora_inicio, estado_cita, estado_pago')
+            .eq('paciente_id', pacienteId)
+            .eq('servicio', service.nombre_servicio)
+            .neq('estado_cita', 'Cancelado')
+            .neq('estado_cita', 'Cancelada')
+            .order('fecha_cita', { ascending: false })
+            .order('hora_inicio', { ascending: false });
+
+          if (!error && history && history.length > 0) {
+            const valid = history.filter(c =>
+              c.estado_cita === 'Atendido' ||
+              c.estado_cita === 'Pendiente' ||
+              c.estado_pago === 'Pagado'
+            );
+            if (valid.length > 0) {
+              const lastPsychId = valid[0].psicologo_id;
+              const matchedEmp = dbData.employees.find(e => e.id === lastPsychId);
+              if (matchedEmp) {
+                setPsicologaSeleccionada(matchedEmp);
+                setCambiosEspecialistaCount(0); // Continuity
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Error pre-selecting last specialist:", e);
+        }
+      } else if (psicologaSeleccionada) {
         // In search by specialist, do not reset if already compatible. Otherwise reset specialist.
         const isCompatible = (dbData.psicologoServicio || []).some(ps => 
           ps.psicologo_id === psicologaSeleccionada.id && ps.servicio_id === service.id
@@ -1004,26 +1044,66 @@ const BookAppointment = () => {
     }
   };
 
-  const handleEspecialistaChange = async (nuevoEspecialista) => {
-    setBookingError('');
-    if (psicologaSeleccionada?.id === nuevoEspecialista?.id) return;
-    if (!nuevoEspecialista) {
-      setPsicologaSeleccionada(null);
-      resetHorariosState();
-      return;
-    }
+  const cleanName = (name) => {
+    if (!name || typeof name !== 'string') return "";
+    return name.replace(/^(Dra\.|Lic\.|Dr\.|Mg\.|Psic\.)\s*/i, "").trim().toLowerCase();
+  };
 
-    const pacienteId = paraQuien === 'yo' ? perfilClinicoPropio?.id_paciente : familiarId;
-    if (!pacienteId || !servicioSeleccionado) {
-      setPsicologaSeleccionada(nuevoEspecialista);
-      resetHorariosState();
-      return;
-    }
-
+  const fetchReceptionPhone = async () => {
     try {
+      let targetLocalIds = [];
+      if (localSeleccionado?.id) {
+        targetLocalIds = [localSeleccionado.id];
+      } else if (sedesConServicios?.[0]?.id) {
+        targetLocalIds = [sedesConServicios[0].id];
+      }
+      if (targetLocalIds.length === 0) return;
+
+      const { data: asignaciones } = await supabase
+        .from('asignaciones_empleado')
+        .select('empleado_id')
+        .in('local_id', targetLocalIds);
+      if (!asignaciones || asignaciones.length === 0) return;
+
+      const empIds = [...new Set(asignaciones.map(a => a.empleado_id))];
+
+      const { data: receptionist } = await supabase
+        .from('empleados')
+        .select('telefono')
+        .eq('rol_sistema', 'Recepción')
+        .eq('activo', true)
+        .in('id', empIds)
+        .limit(1)
+        .maybeSingle();
+
+      if (receptionist?.telefono) {
+        setReceptionPhone(receptionist.telefono);
+      }
+    } catch (_) {
+      // Silently fail — phone is optional
+    }
+  };
+
+  const handleEspecialistaChange = async (nuevoEspecialista) => {
+    try {
+      setBookingError('');
+      if (psicologaSeleccionada?.id === nuevoEspecialista?.id) return;
+      if (!nuevoEspecialista) {
+        setPsicologaSeleccionada(null);
+        resetHorariosState();
+        return;
+      }
+
+      const pacienteId = paraQuien === 'yo' ? perfilClinicoPropio?.id_paciente : familiarId;
+      if (!pacienteId || !servicioSeleccionado) {
+        setPsicologaSeleccionada(nuevoEspecialista);
+        resetHorariosState();
+        return;
+      }
+
       const { data: history, error } = await supabase
         .from('citas')
-        .select('id, psicologo_id, psicologa_nombre, fecha_cita, hora_inicio, estado_cita')
+        .select('id, psicologo_id, psicologa_nombre, fecha_cita, hora_inicio, estado_cita, estado_pago')
         .eq('paciente_id', pacienteId)
         .eq('servicio', servicioSeleccionado.nombre_servicio)
         .neq('estado_cita', 'Cancelado')
@@ -1039,10 +1119,42 @@ const BookAppointment = () => {
         return;
       }
 
-      const ultimaCita = history[0];
-      if (ultimaCita.psicologo_id === nuevoEspecialista.id) {
+      const historialValido = history.filter(c =>
+        c.estado_cita === 'Atendido' ||
+        c.estado_cita === 'Pendiente' ||
+        c.estado_pago === 'Pagado'
+      );
+
+      if (historialValido.length === 0) {
         setPsicologaSeleccionada(nuevoEspecialista);
         resetHorariosState();
+        return;
+      }
+
+      const targetEmp = nuevoEspecialista || {};
+      const nuevoNombre = targetEmp.nombres
+        ? `${targetEmp.nombres || ''} ${targetEmp.apellido_paterno || ''} ${targetEmp.apellido_materno || ''}`.trim()
+        : (targetEmp.nombres_apellidos || '');
+      const cleanNuevo = cleanName(nuevoNombre);
+
+      const listaCronologica = [...historialValido].sort((a, b) => new Date(a.fecha_cita || a.created_at) - new Date(b.fecha_cita || b.created_at));
+
+      let cambiosPasados = 0;
+      for (let i = 1; i < listaCronologica.length; i++) {
+        const prev = cleanName(listaCronologica[i - 1].psicologa_nombre);
+        const curr = cleanName(listaCronologica[i].psicologa_nombre);
+        if (prev && curr && prev !== curr) {
+          cambiosPasados++;
+        }
+      }
+
+      const ultimaCita = listaCronologica[listaCronologica.length - 1];
+      const ultimaPsicologa = cleanName(ultimaCita?.psicologa_nombre);
+
+      if (cleanNuevo === ultimaPsicologa) {
+        setPsicologaSeleccionada(nuevoEspecialista);
+        resetHorariosState();
+        setCambiosEspecialistaCount(0);
         return;
       }
 
@@ -1053,19 +1165,20 @@ const BookAppointment = () => {
       setLastPsychologist(lastEmp);
       setTempEspecialista(nuevoEspecialista);
 
-      // Calcular cantidad de psicólogos únicos en el historial
-      const uniqueIds = new Set(history.map(c => c.psicologo_id).filter(Boolean));
-      const totalCount = uniqueIds.has(nuevoEspecialista.id) ? uniqueIds.size : uniqueIds.size + 1;
+      const totalCambios = cambiosPasados + 1;
+      setCambiosEspecialistaCount(totalCambios);
 
-      if (totalCount === 2) {
-        setShowFirstChangeModal(true);
-      } else if (totalCount === 3) {
-        setShowSecondChangeModal(true);
-      } else if (totalCount >= 4) {
-        setShowBlockedChangeModal(true);
+      const showModal = (fn) => setTimeout(() => fn(), 0);
+
+      if (totalCambios >= 3) {
+        showModal(() => {
+          setShowBlockedChangeModal(true);
+          fetchReceptionPhone();
+        });
+      } else if (totalCambios === 2) {
+        showModal(() => setShowSecondChangeModal(true));
       } else {
-        setPsicologaSeleccionada(nuevoEspecialista);
-        resetHorariosState();
+        showModal(() => setShowFirstChangeModal(true));
       }
     } catch (err) {
       console.error('Error al verificar historial de cambios:', err);
@@ -1119,9 +1232,8 @@ const BookAppointment = () => {
         }
 
         if (nextStepId === 'pago') {
-          setTempComentario(comentario);
-          setShowCommentsModal(true);
-          return; // Modal will set the stepIndex to payment when done
+          setStepIndex(targetIndex);
+          return;
         }
 
         setStepIndex(targetIndex);
@@ -1264,9 +1376,21 @@ const BookAppointment = () => {
         }
       }
 
-      const isRequestApproval = justificacionCambioSolicitud && justificacionCambioSolicitud.trim() !== '';
-
       const cleanPsicologaNombre = `${psicologaSeleccionada.nombres || ''} ${psicologaSeleccionada.apellido_paterno || ''} ${psicologaSeleccionada.apellido_materno || ''}`.trim();
+
+      const isPromoApplied = paqueteSeleccionado?.type !== 'adquirido' && (() => {
+        const res = obtenerPrecioAplicable({
+          servicio: servicioSeleccionado,
+          paqueteCatalogo: paqueteSeleccionado?.type === 'catalogo' ? paqueteSeleccionado : null,
+          especialista: psicologaSeleccionada,
+          reglasPrecios: dbData.reglasPrecios,
+          localId: localSeleccionado?.id || null,
+          modalidad: modalidad,
+          asignaciones: dbData.asignaciones,
+          cargos: dbData.cargos
+        });
+        return !!res.tienePromocion;
+      })();
 
       const cita = {
         paciente_id: pacienteId,
@@ -1287,7 +1411,9 @@ const BookAppointment = () => {
         habitacion_id: dbHabitacionId,
         local_id: activeLocal?.id || null,
         comentario_cambio_psicologo: comentarioCambio,
-        justificacion_cambio_solicitud: justificacionCambioSolicitud
+        cupon_id: couponData ? couponData.id : null,
+        cupon_aplicado: couponData ? true : false,
+        promocion_aplicada: isPromoApplied ? true : false
       };
 
       const res = await crearCita(cita);
@@ -1301,16 +1427,10 @@ const BookAppointment = () => {
   };
 
   const handleConfirmarReserva = async () => {
-    const isRequestApproval = justificacionCambioSolicitud && justificacionCambioSolicitud.trim() !== '';
-
     if (paqueteSeleccionado?.type === 'adquirido') {
       const res = await saveAppointment('Pagado', paqueteSeleccionado.metodo_pago);
       if (res.success) {
-        if (isRequestApproval) {
-          toast.success('Solicitud de cambio enviada. Tu cita ha sido registrada en estado pendiente de aprobación.', { duration: 6000 });
-        } else {
-          toast.success('Cita agendada correctamente utilizando tu paquete.', { duration: 4000 });
-        }
+        toast.success('Cita agendada correctamente utilizando tu paquete.', { duration: 4000 });
         navigate('/dashboard/appointments');
       } else {
         setBookingError(res.error || 'Error al guardar la cita.');
@@ -1318,9 +1438,6 @@ const BookAppointment = () => {
     } else if (metodoPago === 'tarjeta') {
       const res = await saveAppointment('Pendiente', 'Pago Online');
       if (res.success) {
-        if (isRequestApproval) {
-          toast.success('Solicitud de cambio enviada. Procediendo a registrar el pago online...', { duration: 4000 });
-        }
         setPaymentModalRedirectOnClose(true);
         setShowPaymentModal(true);
       } else {
@@ -1329,11 +1446,7 @@ const BookAppointment = () => {
     } else {
       const res = await saveAppointment('Pendiente', 'Pago en clínica');
       if (res.success) {
-        if (isRequestApproval) {
-          toast.success('Solicitud de cambio enviada. Tu cita ha sido registrada en estado pendiente de aprobación.', { duration: 6000 });
-        } else {
-          toast.success('Cita agendada correctamente. Recuerda realizar el pago en recepción el día de tu consulta.', { duration: 5000 });
-        }
+        toast.success('Cita agendada correctamente. Recuerda realizar el pago en recepción el día de tu consulta.', { duration: 5000 });
         navigate('/dashboard/appointments');
       } else {
         setBookingError(res.error || 'Error al guardar la cita.');
@@ -2396,73 +2509,7 @@ const BookAppointment = () => {
         />
       )}
 
-      {/* Observations Modal */}
-      {showCommentsModal && (
-        <div 
-          onClick={() => setShowCommentsModal(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            className="relative bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden p-6"
-          >
-            <header className="flex justify-between items-center pb-3 border-b mb-4">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#003178]">rate_review</span>
-                <h4 className="font-bold text-base text-gray-900 font-sans">
-                  Comentarios para el Especialista
-                </h4>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowCommentsModal(false)}
-                className="text-gray-400 hover:text-gray-650 p-1 rounded-full hover:bg-gray-100 cursor-pointer"
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </header>
-            <div className="space-y-4 text-left">
-              <p className="text-xs text-gray-500 leading-relaxed">
-                ¿Deseas agregar alguna observación o motivo de consulta? Este comentario es opcional.
-              </p>
-              <textarea
-                value={tempComentario}
-                onChange={e => setTempComentario(e.target.value)}
-                placeholder="Escribe tu comentario aquí..."
-                rows="4"
-                className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-[#003178] outline-none resize-none"
-              />
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setComentario('');
-                    setTempComentario('');
-                    setShowCommentsModal(false);
-                    const pagoIndex = steps.findIndex(s => s.id === 'pago');
-                    if (pagoIndex !== -1) setStepIndex(pagoIndex);
-                  }}
-                  className="px-4 py-2 text-xs font-bold border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-500 cursor-pointer"
-                >
-                  Omitir / Continuar sin comentario
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setComentario(tempComentario);
-                    setShowCommentsModal(false);
-                    const pagoIndex = steps.findIndex(s => s.id === 'pago');
-                    if (pagoIndex !== -1) setStepIndex(pagoIndex);
-                  }}
-                  className="px-4 py-2 bg-[#003178] hover:bg-blue-900 text-white font-bold text-xs rounded-xl transition-all cursor-pointer font-sans"
-                >
-                  Guardar y continuar
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* (Obsolete observations modal has been removed) */}
 
       {/* Manual Payment Details Modal */}
       {showPaymentModal && (
@@ -2492,30 +2539,54 @@ const BookAppointment = () => {
             </header>
 
             <div className="p-5 overflow-y-auto space-y-4 text-left flex-1 min-h-0">
-              <div className="flex gap-2.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setMetodoPagoOnlineDetalle('TRANSFERENCIA')}
-                  className={`flex-1 py-2 px-3 rounded-lg border font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${metodoPagoOnlineDetalle === 'TRANSFERENCIA'
-                      ? 'bg-[#003178] border-[#003178] text-white shadow-sm'
-                      : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-55'
-                    }`}
-                >
-                  <span className="material-symbols-outlined text-[16px]">account_balance</span>
-                  Transferencia
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMetodoPagoOnlineDetalle('YAPE')}
-                  className={`flex-1 py-2 px-3 rounded-lg border font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${metodoPagoOnlineDetalle === 'YAPE'
-                      ? 'bg-[#003178] border-[#003178] text-white shadow-sm'
-                      : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-55'
-                    }`}
-                >
-                  <span className="material-symbols-outlined text-[16px]">qr_code_2</span>
-                  Yape
-                </button>
-              </div>
+              {(() => {
+                const activeTypes = [...new Set(metodosPagoClinica.map(m => m.tipo))];
+                if (activeTypes.length <= 1) return null;
+                return (
+                  <div className="flex gap-2.5 shrink-0">
+                    {activeTypes.includes('TRANSFERENCIA') && (
+                      <button
+                        type="button"
+                        onClick={() => setMetodoPagoOnlineDetalle('TRANSFERENCIA')}
+                        className={`flex-1 py-2 px-3 rounded-lg border font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${metodoPagoOnlineDetalle === 'TRANSFERENCIA'
+                            ? 'bg-[#003178] border-[#003178] text-white shadow-sm'
+                            : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-55'
+                          }`}
+                      >
+                        <span className="material-symbols-outlined text-[16px]">account_balance</span>
+                        Transferencia
+                      </button>
+                    )}
+                    {activeTypes.includes('YAPE') && (
+                      <button
+                        type="button"
+                        onClick={() => setMetodoPagoOnlineDetalle('YAPE')}
+                        className={`flex-1 py-2 px-3 rounded-lg border font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${metodoPagoOnlineDetalle === 'YAPE'
+                            ? 'bg-[#003178] border-[#003178] text-white shadow-sm'
+                            : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-55'
+                          }`}
+                      >
+                        <span className="material-symbols-outlined text-[16px]">qr_code_2</span>
+                        Yape
+                      </button>
+                    )}
+                    {activeTypes.filter(t => t !== 'TRANSFERENCIA' && t !== 'YAPE').map(tipo => (
+                      <button
+                        key={tipo}
+                        type="button"
+                        onClick={() => setMetodoPagoOnlineDetalle(tipo)}
+                        className={`flex-1 py-2 px-3 rounded-lg border font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${metodoPagoOnlineDetalle === tipo
+                            ? 'bg-[#003178] border-[#003178] text-white shadow-sm'
+                            : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-55'
+                          }`}
+                      >
+                        <span className="material-symbols-outlined text-[16px]">payments</span>
+                        {tipo}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
 
               {loadingMetodosPago ? (
                 <div className="flex justify-center py-4">
@@ -2781,12 +2852,20 @@ const BookAppointment = () => {
         </div>
       )}
 
-      {/* Cuarto Psicólogo o Más (Cambio Bloqueado) */}
+      {/* Bloqueo absoluto — Contactar con Recepción */}
       {showBlockedChangeModal && (
-        <div 
+        <div
+          onClick={() => {
+            setShowBlockedChangeModal(false);
+            if (lastPsychologist) {
+              setPsicologaSeleccionada(lastPsychologist);
+              resetHorariosState();
+            }
+          }}
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
         >
-          <div 
+          <div
+            onClick={(e) => e.stopPropagation()}
             className="relative bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden p-6 text-left animate-in zoom-in-95 duration-150 font-sans"
           >
             <div className="flex items-start gap-4 mb-4">
@@ -2798,51 +2877,34 @@ const BookAppointment = () => {
                   Límite de cambios superado
                 </h4>
                 <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                  Has superado el límite de cambios de especialista para este servicio. Para proceder con un nuevo psicólogo, debes enviar una solicitud de revisión a administración.
+                  Has alcanzado el límite máximo de cambios de especialista para este servicio. Para garantizar la continuidad de tu terapia, es necesario que continúes con tu psicólogo actual.
                 </p>
+                {receptionPhone && (
+                  <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+                    Si deseas realizar un cambio de especialista, por favor contáctate con Recepción al número: <strong className="text-red-700">{receptionPhone}</strong>.
+                  </p>
+                )}
+                {!receptionPhone && (
+                  <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+                    Si deseas realizar un cambio de especialista, por favor contáctate con Recepción.
+                  </p>
+                )}
               </div>
             </div>
 
-            <div className="space-y-2 mb-5">
-              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1">
-                Escribe el motivo detallado de tu cambio <span className="text-red-500 font-bold">*</span>
-              </label>
-              <textarea
-                required
-                value={justificacionCambioSolicitud}
-                onChange={e => setJustificacionCambioSolicitud(e.target.value)}
-                placeholder="Escribe el motivo detallado del cambio aquí (Obligatorio)..."
-                rows="4"
-                className="w-full p-3 border border-gray-200 rounded-xl text-xs focus:border-red-500 focus:ring-1 focus:ring-red-100 outline-none resize-none bg-slate-50/50"
-              />
-            </div>
-
-            <div className="w-full flex justify-center items-center gap-4 mt-6">
+            <div className="w-full flex justify-center mt-6">
               <button
                 type="button"
                 onClick={() => {
                   setShowBlockedChangeModal(false);
-                  setJustificacionCambioSolicitud('');
                   if (lastPsychologist) {
                     setPsicologaSeleccionada(lastPsychologist);
                     resetHorariosState();
                   }
                 }}
-                className="px-6 py-2 h-10 flex items-center justify-center text-sm font-medium border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-500 cursor-pointer text-center whitespace-nowrap"
+                className="px-8 py-2.5 h-10 flex items-center justify-center bg-red-600 hover:bg-red-700 text-white font-medium text-sm rounded-xl transition-all cursor-pointer text-center whitespace-nowrap"
               >
-                Volver atrás
-              </button>
-              <button
-                type="button"
-                disabled={!justificacionCambioSolicitud.trim()}
-                onClick={() => {
-                  setShowBlockedChangeModal(false);
-                  setPsicologaSeleccionada(tempEspecialista);
-                  resetHorariosState();
-                }}
-                className="px-6 py-2 h-10 flex items-center justify-center bg-red-600 hover:bg-red-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-medium text-sm rounded-xl transition-all cursor-pointer text-center whitespace-nowrap"
-              >
-                Enviar solicitud
+                Entendido
               </button>
             </div>
           </div>

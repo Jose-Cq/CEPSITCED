@@ -180,11 +180,12 @@ const Appointments = ({ onNavigate }) => {
 
   const getPaymentBadge = (estado) => {
     const badges = {
-      Pendiente: { bg: 'bg-yellow-50', text: 'text-yellow-800', border: 'border-yellow-200', dot: 'bg-yellow-500' },
-      Pagado: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-200', dot: 'bg-green-500' },
-      'Cobertura especial': { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200', dot: 'bg-blue-500' },
-      Rechazado: { bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-200', dot: 'bg-red-500' },
-      Cancelado: { bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-200', dot: 'bg-red-500' },
+      Pendiente: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', dot: 'bg-amber-500' },
+      Pagado: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200', dot: 'bg-green-500' },
+      'Cobertura especial': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500' },
+      Rechazado: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', dot: 'bg-red-500' },
+      Cancelado: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', dot: 'bg-red-500' },
+      Exonerado: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500' },
     };
     const style = badges[estado] || badges.Pendiente;
     return (
@@ -212,11 +213,11 @@ const Appointments = ({ onNavigate }) => {
       Pendiente: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
       Confirmado: { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200' },
       Confirmada: { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200' },
-      Realizada: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-200' },
-      Completada: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-200' },
-      Atendido: { bg: 'bg-teal-50', text: 'text-teal-800', border: 'border-teal-200' },
-      Cancelado: { bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-200' },
-      Ausente: { bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-200' },
+      Realizada: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
+      Completada: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
+      Atendido: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
+      Cancelado: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' },
+      Ausente: { bg: 'bg-slate-50', text: 'text-slate-650', border: 'border-slate-200' },
       Reprogramada: { bg: 'bg-purple-50', text: 'text-purple-800', border: 'border-purple-200' },
     };
     const style = badges[displayEstado] || badges.Pendiente;
@@ -380,12 +381,22 @@ const Appointments = ({ onNavigate }) => {
                               </span>
                             ))}
                             {['Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(proximaCita.estado_cita) && (
-                              <button
-                                onClick={() => handleCancelarCita(proximaCita.id)}
-                                className="inline-flex items-center justify-center h-[36px] px-4 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap"
-                              >
-                                Cancelar
-                              </button>
+                              proximaCita.es_titular === false ? (
+                                <span className="inline-flex items-center justify-center h-[36px] px-4 bg-gray-100 text-gray-400 border border-gray-200 font-bold text-xs rounded-lg select-none whitespace-nowrap cursor-not-allowed" title="Los acompañantes no pueden cancelar la cita">
+                                  Solo lectura
+                                </span>
+                              ) : (proximaCita.estado_pago === 'Pagado' && proximaCita.metodo_pago !== 'Saldo de Paquete') ? (
+                                <span className="inline-flex items-center justify-center h-[36px] px-4 bg-green-50 text-green-800 border border-green-200 font-bold text-xs rounded-lg select-none whitespace-nowrap cursor-not-allowed" title="Cita pagada no se puede cancelar">
+                                  Pagado
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => handleCancelarCita(proximaCita.id)}
+                                  className="inline-flex items-center justify-center h-[36px] px-4 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap"
+                                >
+                                  Cancelar
+                                </button>
+                              )
                             )}
                           </div>
                         </div>
@@ -534,7 +545,6 @@ const Appointments = ({ onNavigate }) => {
                                     >
                                       <span className="material-symbols-outlined text-[20px] leading-none">visibility</span>
                                     </button>
-
                                     {cita.modalidad === 'Virtual' && (cita.link_reunion && cita.link_reunion.trim() !== '' ? (
                                       <a
                                         href={cita.link_reunion}
@@ -553,17 +563,33 @@ const Appointments = ({ onNavigate }) => {
                                         <span className="material-symbols-outlined text-[20px] leading-none">videocam</span>
                                       </span>
                                     ))}
-                                    <button
-                                      onClick={() => ['Pending', 'Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita) ? handleCancelarCita(cita.id) : null}
-                                      className={`inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all duration-200 shrink-0 ${
-                                        ['Pending', 'Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita)
-                                          ? 'text-gray-500 hover:text-red-650 hover:bg-red-50 cursor-pointer'
-                                          : 'text-gray-200 cursor-not-allowed'
-                                      }`}
-                                      title={['Pending', 'Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita) ? 'Cancelar Cita' : 'No se puede cancelar'}
-                                    >
-                                      <span className="material-symbols-outlined text-[20px] leading-none">cancel</span>
-                                    </button>
+                                    {cita.es_titular === false ? (
+                                      <span
+                                        className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-gray-200 cursor-not-allowed select-none shrink-0"
+                                        title="Los acompañantes no pueden cancelar la cita"
+                                      >
+                                        <span className="material-symbols-outlined text-[20px] leading-none text-gray-200">block</span>
+                                      </span>
+                                    ) : (cita.estado_pago === 'Pagado' && cita.metodo_pago !== 'Saldo de Paquete') ? (
+                                      <span
+                                        className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-gray-200 cursor-not-allowed select-none shrink-0"
+                                        title="Cita pagada no se puede cancelar"
+                                      >
+                                        <span className="material-symbols-outlined text-[20px] leading-none text-gray-200">cancel</span>
+                                      </span>
+                                    ) : (
+                                      <button
+                                        onClick={() => ['Pending', 'Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita) ? handleCancelarCita(cita.id) : null}
+                                        className={`inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all duration-200 shrink-0 ${
+                                          ['Pending', 'Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita)
+                                            ? 'text-gray-555 hover:text-red-650 hover:bg-red-50 cursor-pointer'
+                                            : 'text-gray-200 cursor-not-allowed'
+                                        }`}
+                                        title={['Pending', 'Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita) ? 'Cancelar Cita' : 'No se puede cancelar'}
+                                      >
+                                        <span className="material-symbols-outlined text-[20px] leading-none">cancel</span>
+                                      </button>
+                                    )}
                                   </div>
                                 </td>
                               </tr>
@@ -654,16 +680,32 @@ const Appointments = ({ onNavigate }) => {
                                   Pendiente
                                 </span>
                               ))}
-                              <button
-                                onClick={() => ['Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita) ? handleCancelarCita(cita.id) : null}
-                                className={`font-bold text-[11px] px-3 py-1.5 rounded-lg transition-colors flex-1 sm:flex-initial text-center whitespace-nowrap ${
-                                  ['Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita)
-                                    ? 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 cursor-pointer'
-                                    : 'bg-gray-55 text-gray-300 border border-gray-100 cursor-not-allowed'
-                                }`}
-                              >
-                                Cancelar
-                              </button>
+                              {cita.es_titular === false ? (
+                                <span
+                                  className="bg-gray-50 text-gray-400 border border-gray-150 font-bold text-[11px] px-3 py-1.5 rounded-lg flex-1 sm:flex-initial text-center whitespace-nowrap cursor-not-allowed select-none"
+                                  title="Los acompañantes no pueden cancelar la cita"
+                                >
+                                  Solo lectura
+                                </span>
+                              ) : (cita.estado_pago === 'Pagado' && cita.metodo_pago !== 'Saldo de Paquete') ? (
+                                <span
+                                  className="bg-gray-100 text-gray-400 border border-gray-200 font-bold text-[11px] px-3 py-1.5 rounded-lg flex-1 sm:flex-initial text-center whitespace-nowrap cursor-not-allowed select-none animate-fade-in"
+                                  title="Cita pagada no se puede cancelar"
+                                >
+                                  Pagada (No cancelable)
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => ['Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita) ? handleCancelarCita(cita.id) : null}
+                                  className={`font-bold text-[11px] px-3 py-1.5 rounded-lg transition-colors flex-1 sm:flex-initial text-center whitespace-nowrap ${
+                                    ['Pendiente', 'Confirmada', 'Confirmado', 'Reprogramada', 'En consulta', 'En Consulta'].includes(cita.estado_cita)
+                                      ? 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 cursor-pointer'
+                                      : 'bg-gray-55 text-gray-300 border border-gray-100 cursor-not-allowed'
+                                  }`}
+                                >
+                                  Cancelar
+                                </button>
+                              )}
                               </div>
                             </div>
                         </div>
@@ -827,30 +869,32 @@ const Appointments = ({ onNavigate }) => {
               <p className="text-sm text-gray-500 text-center py-8">No hay métodos de pago configurados.</p>
             ) : (
               <div className="space-y-4">
-                {['TRANSFERENCIA', 'YAPE', 'OTROS'].map(tipo => {
-                  const items = metodosPagoClinica.filter(m => m.tipo === tipo);
-                  if (items.length === 0) return null;
-                  return items.map((item, idx) => (
-                    <div key={idx} className="p-4 border border-gray-200 rounded-xl bg-slate-50/50 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[#003178]">
-                          {tipo === 'YAPE' ? 'qr_code' : tipo === 'TRANSFERENCIA' ? 'account_balance' : 'payments'}
-                        </span>
-                        <h4 className="font-bold text-sm text-gray-800 capitalize">{tipo === 'TRANSFERENCIA' ? 'Transferencia Bancaria' : tipo}</h4>
-                      </div>
-                      {item.titular && <p className="text-xs text-gray-600"><span className="font-semibold">Titular:</span> {item.titular}</p>}
-                      {tipo === 'YAPE' && item.numero_yape && <p className="text-xs text-gray-600"><span className="font-semibold">N° Celular:</span> <span className="font-mono font-bold">{item.numero_yape}</span></p>}
-                      {item.banco && <p className="text-xs text-gray-600"><span className="font-semibold">Banco:</span> {item.banco}</p>}
-                      {item.numero_cuenta && <p className="text-xs text-gray-600"><span className="font-semibold">N° Cuenta:</span> <span className="font-mono font-bold">{item.numero_cuenta}</span></p>}
-                      {item.cci && <p className="text-xs text-gray-600"><span className="font-semibold">CCI:</span> <span className="font-mono font-bold">{item.cci}</span></p>}
-                      {item.codigo_qr && (
-                        <div className="mt-2">
-                          <img src={item.codigo_qr} alt="QR" className="w-32 h-32 object-contain border border-gray-200 rounded-lg" />
+                {(() => {
+                  const activeTypes = [...new Set(metodosPagoClinica.map(m => m.tipo))];
+                  return activeTypes.map(tipo => {
+                    const items = metodosPagoClinica.filter(m => m.tipo === tipo);
+                    return items.map((item, idx) => (
+                      <div key={`${tipo}-${idx}`} className="p-4 border border-gray-200 rounded-xl bg-slate-50/50 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[#003178]">
+                            {tipo === 'YAPE' ? 'qr_code' : tipo === 'TRANSFERENCIA' ? 'account_balance' : 'payments'}
+                          </span>
+                          <h4 className="font-bold text-sm text-gray-800 capitalize">{tipo === 'TRANSFERENCIA' ? 'Transferencia Bancaria' : tipo}</h4>
                         </div>
-                      )}
-                    </div>
-                  ));
-                })}
+                        {item.titular && <p className="text-xs text-gray-600"><span className="font-semibold">Titular:</span> {item.titular}</p>}
+                        {tipo === 'YAPE' && item.numero_yape && <p className="text-xs text-gray-600"><span className="font-semibold">N° Celular:</span> <span className="font-mono font-bold">{item.numero_yape}</span></p>}
+                        {item.banco && <p className="text-xs text-gray-600"><span className="font-semibold">Banco:</span> {item.banco}</p>}
+                        {item.numero_cuenta && <p className="text-xs text-gray-600"><span className="font-semibold">N° Cuenta:</span> <span className="font-mono font-bold">{item.numero_cuenta}</span></p>}
+                        {item.cci && <p className="text-xs text-gray-600"><span className="font-semibold">CCI:</span> <span className="font-mono font-bold">{item.cci}</span></p>}
+                        {item.codigo_qr && (
+                          <div className="mt-2">
+                            <img src={item.codigo_qr} alt="QR" className="w-32 h-32 object-contain border border-gray-200 rounded-lg" />
+                          </div>
+                        )}
+                      </div>
+                    ));
+                  });
+                })()}
               </div>
             )}
             <div className="mt-6 flex justify-end">

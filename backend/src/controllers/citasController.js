@@ -37,19 +37,87 @@ export const getCitasPaciente = async (req, res) => {
       return res.status(403).json({ success: false, error: 'No tienes permiso para ver las citas de este paciente.' });
     }
 
-    const { data, error } = await supabase
-      .from('citas')
-      .select('*, habitaciones(nombre, locales(nombre, direccion))')
-      .eq('paciente_id', pacienteId)
-      .order('fecha_cita', { ascending: false });
+    // Safety check/cleanup of fully consumed packages
+    try {
+      const { data: activePacks } = await supabase
+        .from('paquetes_adquiridos')
+        .select('id, sesiones_totales, sesiones_disponibles')
+        .eq('paciente_id', pacienteId);
 
+      if (activePacks && activePacks.length > 0) {
+        for (const pack of activePacks) {
+          if (pack.sesiones_disponibles === 0) {
+            // Fetch appointments for this package
+            const { data: packCitas } = await supabase
+              .from('citas')
+              .select('estado_cita')
+              .eq('paquete_id', pack.id);
+
+            const nonCancelledCitas = (packCitas || []).filter(c => {
+              const est = (c.estado_cita || '').toLowerCase();
+              return est !== 'cancelado' && est !== 'cancelada';
+            });
+
+            // If all booked sessions are completed/attended/done, delete the package
+            const allConsumed = nonCancelledCitas.length === pack.sesiones_totales && 
+              nonCancelledCitas.every(c => {
+                const est = (c.estado_cita || '').toLowerCase();
+                return ['realizada', 'completada', 'atendido', 'ausente'].includes(est);
+              });
+
+            if (allConsumed) {
+              await supabase.from('paquetes_adquiridos').delete().eq('id', pack.id);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error during safety package cleanup:', e.message);
+    }
+
+    // Query cita_pacientes_adicionales to find all cita_ids where the user is an accompanist
+    const { data: additionalMatches, error: additionalErr } = await supabase
+      .from('cita_pacientes_adicionales')
+      .select('cita_id')
+      .eq('paciente_id', pacienteId);
+
+    if (additionalErr) throw additionalErr;
+
+    const additionalCitaIds = (additionalMatches || []).map(m => m.cita_id);
+
+    let query = supabase
+      .from('citas')
+      .select('*, habitaciones(nombre, locales(nombre, direccion))');
+
+    if (additionalCitaIds.length > 0) {
+      query = query.or(`paciente_id.eq.${pacienteId},id.in.(${additionalCitaIds.join(',')})`);
+    } else {
+      query = query.eq('paciente_id', pacienteId);
+    }
+
+    const { data, error } = await query.order('fecha_cita', { ascending: false });
     if (error) throw error;
 
+    // Filter out cancelled appointments for companions (non-titulars)
+    const filteredData = (data || []).filter(cita => {
+      const isTitular = String(cita.paciente_id).trim().toLowerCase() === String(pacienteId).trim().toLowerCase();
+      if (isTitular) return true; // Titular sees everything (including cancelled)
+
+      // Accompanist only sees active appointments
+      const estado = (cita.estado_cita || '').toLowerCase();
+      return estado !== 'cancelado' && estado !== 'cancelada';
+    });
+
+    // Tag each appointment with its ownership role
+    for (const cita of filteredData) {
+      cita.es_titular = String(cita.paciente_id).trim().toLowerCase() === String(pacienteId).trim().toLowerCase();
+    }
+
     // Dynamic session numbering by chronological order per (paciente, servicio)
-    if (data && data.length > 0) {
+    if (filteredData.length > 0) {
       // Group citas by servicio
       const byServicio = {};
-      for (const cita of data) {
+      for (const cita of filteredData) {
         if (!byServicio[cita.servicio]) byServicio[cita.servicio] = [];
         byServicio[cita.servicio].push(cita);
       }
@@ -70,12 +138,12 @@ export const getCitasPaciente = async (req, res) => {
           sessionMap[cita.id] = idx + 1;
         });
       }
-      for (const cita of data) {
+      for (const cita of filteredData) {
         cita.numero_sesion = sessionMap[cita.id] || null;
       }
 
       // Look up coupon info for each cita
-      const citaIds = data.map(c => c.id);
+      const citaIds = filteredData.map(c => c.id);
       const { data: cuponUsos, error: cuponError } = await supabase
         .from('cupones_usos')
         .select('cita_id, cupones!inner(codigo, tipo_descuento, valor_descuento)')
@@ -86,13 +154,13 @@ export const getCitasPaciente = async (req, res) => {
         for (const uso of cuponUsos) {
           cuponMap[uso.cita_id] = uso.cupones;
         }
-        for (const cita of data) {
+        for (const cita of filteredData) {
           cita.cupon_aplicado = cuponMap[cita.id] || null;
         }
       }
     }
 
-    return res.json({ success: true, data });
+    return res.json({ success: true, data: filteredData });
   } catch (error) {
     console.error('Error en getCitasPaciente:', error.message);
     return res.status(500).json({ success: false, error: error.message });
@@ -158,77 +226,36 @@ export const postCrearCita = async (req, res) => {
 
     if (historyError) throw historyError;
 
-    // Ordenar de forma ascendente
-    const sortedCitas = (existingCitas || []).sort((a, b) => {
-      const dateCmp = String(a.fecha_cita).localeCompare(String(b.fecha_cita));
+    // Ordenar de forma descendente (el más reciente primero)
+    const sortedCitasDesc = (existingCitas || []).sort((a, b) => {
+      const dateCmp = String(b.fecha_cita).localeCompare(String(a.fecha_cita));
       if (dateCmp !== 0) return dateCmp;
-      return String(a.hora_inicio || '').localeCompare(String(b.hora_inicio || ''));
+      return String(b.hora_inicio || '').localeCompare(String(a.hora_inicio || ''));
     });
 
-    // Cita temporal para inserción virtual
-    const tempCitaId = 'temp-cita-new-' + Date.now();
-    const tempCita = {
-      id: tempCitaId,
-      psicologo_id: citaData.psicologo_id,
-      psicologa_nombre: citaData.psicologa_nombre,
-      fecha_cita: citaData.fecha_cita,
-      hora_inicio: citaData.hora_inicio
-    };
+    // Identificar al psicólogo actual (el más reciente en el historial)
+    const psicologoActualId = sortedCitasDesc.length > 0 ? sortedCitasDesc[0].psicologo_id : null;
 
-    // Insertar la nueva cita en el orden correcto
-    const insertIndex = sortedCitas.findIndex(c => {
-      const dateCmp = String(c.fecha_cita).localeCompare(String(tempCita.fecha_cita));
-      if (dateCmp > 0) return true;
-      if (dateCmp === 0) {
-        return String(c.hora_inicio || '').localeCompare(String(tempCita.hora_inicio || '')) > 0;
+    // Determinar si es cambio de especialista
+    const isSpecialistChange = psicologoActualId ? (citaData.psicologo_id !== psicologoActualId) : false;
+
+    // Calcular cantidad lineal de cambios en el historial de forma ascendente
+    const chronologicalHistory = [...sortedCitasDesc].reverse();
+    let cambiosPasados = 0;
+    for (let i = 1; i < chronologicalHistory.length; i++) {
+      if (chronologicalHistory[i].psicologo_id !== chronologicalHistory[i - 1].psicologo_id) {
+        cambiosPasados++;
       }
-      return false;
-    });
-
-    if (insertIndex === -1) {
-      sortedCitas.push(tempCita);
-    } else {
-      sortedCitas.splice(insertIndex, 0, tempCita);
     }
 
-    // Ubicar la posición de la nueva cita en el historial ordenado
-    const idx = sortedCitas.findIndex(c => c.id === tempCitaId);
-
-    let isSpecialistChange = false;
-    let psicologoAnteriorId = null;
-    let psicologoAnteriorNombre = '';
-    let totalUniqueCount = 1;
-
-    if (idx > 0) {
-      // Hay citas anteriores cronológicamente
-      const immediateAnterior = sortedCitas[idx - 1];
-      psicologoAnteriorId = immediateAnterior.psicologo_id;
-      psicologoAnteriorNombre = immediateAnterior.psicologa_nombre;
-
-      if (citaData.psicologo_id !== immediateAnterior.psicologo_id) {
-        isSpecialistChange = true;
-      }
-
-      // Obtener el conjunto de psicólogos únicos previos a esta cita
-      const priorCitas = sortedCitas.slice(0, idx);
-      const uniquePriorPsicologos = new Set(priorCitas.map(c => c.psicologo_id).filter(Boolean));
-      
-      // Sumar el especialista actual si no está en la historia previa
-      totalUniqueCount = uniquePriorPsicologos.has(citaData.psicologo_id) 
-        ? uniquePriorPsicologos.size 
-        : uniquePriorPsicologos.size + 1;
-    }
+    const totalEventosCambio = isSpecialistChange ? (cambiosPasados + 1) : cambiosPasados;
 
     if (isSpecialistChange) {
-      if (totalUniqueCount >= 4) {
-        if (!citaData.justificacion_cambio_solicitud || !citaData.justificacion_cambio_solicitud.trim()) {
-          return res.status(400).json({
-            success: false,
-            error: 'Has superado el límite de cambios de especialista para este servicio. Debes ingresar un motivo obligatorio para enviar tu solicitud de aprobación.'
-          });
-        }
-        // Marcar la cita como pendiente
-        citaData.estado_cita = 'Pendiente';
+      if (totalEventosCambio >= 3) {
+        return res.status(400).json({
+          success: false,
+          error: 'Has superado el límite de cambios de especialista para este servicio. Por favor, contáctate con Recepción.'
+        });
       }
     }
 
@@ -253,6 +280,118 @@ export const postCrearCita = async (req, res) => {
       });
     }
 
+    // Resolve or register the package purchase if catalog package is sent
+    let resolvedPaqueteCatalogoId = null;
+    let resolvedPaqueteAdquiridoId = citaData.paquete_id || null;
+
+    if (citaData.paquete_catalogo_id && !resolvedPaqueteAdquiridoId) {
+      try {
+        const { data: catalogPack } = await supabase
+          .from('paquetes_catalogo')
+          .select('*')
+          .eq('id', citaData.paquete_catalogo_id)
+          .single();
+
+        if (catalogPack) {
+          resolvedPaqueteCatalogoId = catalogPack.id;
+          
+          const todayStr = new Date().toLocaleDateString('sv-SE');
+          const datesOk = (!catalogPack.promo_fecha_inicio || todayStr >= catalogPack.promo_fecha_inicio) && 
+                          (!catalogPack.promo_fecha_fin || todayStr <= catalogPack.promo_fecha_fin);
+          const isPromoActive = catalogPack.promocion_activa && datesOk;
+          
+          let price = Number(catalogPack.precio_total);
+          if (isPromoActive && catalogPack.promo_descuento_porcentaje) {
+            price = price * (1 - Number(catalogPack.promo_descuento_porcentaje) / 100);
+          }
+
+          const { data: newPack, error: packErr } = await supabase
+            .from('paquetes_adquiridos')
+            .insert([{
+              paciente_id: citaData.paciente_id,
+              servicio_id: catalogPack.servicio_id,
+              paquete_catalogo_id: catalogPack.id,
+              nombre_paquete_snapshot: catalogPack.nombre_paquete,
+              sesiones_totales: catalogPack.cantidad_sesiones,
+              sesiones_disponibles: catalogPack.cantidad_sesiones,
+              monto_pagado: price,
+              metodo_pago: citaData.metodo_pago || 'Pago Online'
+            }])
+            .select()
+            .single();
+
+          if (!packErr && newPack) {
+            resolvedPaqueteAdquiridoId = newPack.id;
+            citaData.paquete_id = newPack.id;
+          }
+        }
+      } catch (e) {
+        console.error('Error al registrar compra de paquete en backend:', e.message);
+      }
+    } else if (resolvedPaqueteAdquiridoId) {
+      try {
+        const { data: acquiredPack } = await supabase
+          .from('paquetes_adquiridos')
+          .select('paquete_catalogo_id')
+          .eq('id', resolvedPaqueteAdquiridoId)
+          .single();
+
+        if (acquiredPack) {
+          resolvedPaqueteCatalogoId = acquiredPack.paquete_catalogo_id;
+        }
+      } catch (e) {
+        console.error('Error al buscar paquete adquirido:', e.message);
+      }
+    }
+
+    // Count existing active sessions for the package to determine if it is Session #1
+    let isFirstSession = true;
+    if (citaData.paquete_id) {
+      const { count: packCitasCount, error: countErr } = await supabase
+        .from('citas')
+        .select('id', { count: 'exact', head: true })
+        .eq('paquete_id', citaData.paquete_id)
+        .neq('estado_cita', 'Cancelado')
+        .neq('estado_cita', 'Cancelada');
+
+      if (countErr) throw countErr;
+      isFirstSession = (packCitasCount || 0) === 0;
+    }
+
+    // Apply strict business rules for states and payment methods
+    if (citaData.paquete_id) {
+      if (isFirstSession) {
+        // Session #1: Created as Pendiente / Pendiente with selected payment method
+        citaData.estado_cita = 'Pendiente';
+        citaData.estado_pago = 'Pendiente';
+
+        let chosenMethod = citaData.metodo_pago || citaData.tipo_pago;
+        if (chosenMethod === 'Pago en clínica' || chosenMethod === 'Pago en Clínica' || chosenMethod === 'Pago en Clinica') {
+          chosenMethod = 'Pago en Clinica';
+        } else {
+          chosenMethod = 'Pago Online';
+        }
+        citaData.metodo_pago = chosenMethod;
+        citaData.tipo_pago = chosenMethod;
+      } else {
+        // Session #2+: Pre-paid by package balance
+        citaData.estado_cita = 'Pendiente';
+        citaData.estado_pago = 'Pagado';
+        citaData.metodo_pago = 'Saldo de Paquete';
+        citaData.tipo_pago = 'Saldo de Paquete';
+      }
+    } else {
+      // Standard individual appointment payment normalization
+      let chosenMethod = citaData.metodo_pago || citaData.tipo_pago;
+      if (chosenMethod === 'Pago en clínica' || chosenMethod === 'Pago en Clínica' || chosenMethod === 'Pago en Clinica') {
+        chosenMethod = 'Pago en Clinica';
+      } else {
+        chosenMethod = 'Pago Online';
+      }
+      citaData.metodo_pago = chosenMethod;
+      citaData.tipo_pago = chosenMethod;
+    }
+
     // Calcular el número estático de sesión del paciente
     const { count: existingCount, error: sesError } = await supabase
       .from('citas')
@@ -265,7 +404,45 @@ export const postCrearCita = async (req, res) => {
 
     citaData.numero_sesion = (existingCount || 0) + 1;
 
-    const { justificacion_cambio_solicitud, ...insertData } = citaData;
+    const { justificacion_cambio_solicitud, cupon_id, paquete_catalogo_id, ...insertData } = citaData;
+
+    // Default flags to false if not set
+    insertData.cupon_aplicado = insertData.cupon_aplicado || false;
+    insertData.promocion_aplicada = insertData.promocion_aplicada || false;
+
+    if (cupon_id) {
+      insertData.cupon_aplicado = true;
+    }
+
+    // Pre-evaluate catalog package promotion for Session #1
+    if (citaData.paquete_id && isFirstSession) {
+      try {
+        const { data: acquiredPack } = await supabase
+          .from('paquetes_adquiridos')
+          .select('paquete_catalogo_id')
+          .eq('id', citaData.paquete_id)
+          .single();
+
+        if (acquiredPack) {
+          const { data: catalogPack } = await supabase
+            .from('paquetes_catalogo')
+            .select('*')
+            .eq('id', acquiredPack.paquete_catalogo_id)
+            .single();
+
+          if (catalogPack) {
+            const todayStr = new Date().toLocaleDateString('sv-SE');
+            const datesOk = (!catalogPack.promo_fecha_inicio || todayStr >= catalogPack.promo_fecha_inicio) && 
+                            (!catalogPack.promo_fecha_fin || todayStr <= catalogPack.promo_fecha_fin);
+            if (catalogPack.promocion_activa && datesOk) {
+              insertData.promocion_aplicada = true;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Error pre-evaluando promoción de paquete:', e.message);
+      }
+    }
 
     const { data, error } = await supabase
       .from('citas')
@@ -275,48 +452,41 @@ export const postCrearCita = async (req, res) => {
 
     if (error) throw error;
 
-    // Si fue un cambio bloqueado, registrar la solicitud en `cambio_psicologo` y notificar por correo
-    if (isSpecialistChange && totalUniqueCount >= 4) {
+    // Register coupon use in cupones_usos table if cupon_id is present
+    if (cupon_id) {
       try {
-        const { error: reqError } = await supabase
-          .from('cambio_psicologo')
+        const { error: usageErr } = await supabase
+          .from('cupones_usos')
           .insert([{
-            cita_id: data.id,
+            cupon_id,
             paciente_id: citaData.paciente_id,
-            servicio: citaData.servicio,
-            psicologo_anterior_id: psicologoAnteriorId,
-            psicologo_nuevo_id: citaData.psicologo_id,
-            motivo: justificacion_cambio_solicitud,
-            estado: 'Pendiente'
+            cita_id: data.id,
+            paquete_adquirido_id: citaData.paquete_id || null
           }]);
-        if (reqError) {
-          console.error('Error al insertar en cambio_psicologo:', reqError.message);
-        }
 
-        // Obtener datos del paciente
-        const { data: pacienteInfo } = await supabase
-          .from('pacientes')
-          .select('nombres, apellido_paterno, apellido_materno, dni')
-          .eq('id_paciente', citaData.paciente_id)
-          .single();
+        if (usageErr) {
+          console.error('Error al registrar uso del cupón en base de datos:', usageErr.message);
+        } else {
+          // Increment uses count on the coupon
+          const { data: coupon, error: getErr } = await supabase
+            .from('cupones')
+            .select('cantidad_usos_actual')
+            .eq('id', cupon_id)
+            .single();
 
-        if (pacienteInfo) {
-          const nombresPaciente = `${pacienteInfo.nombres || ''} ${pacienteInfo.apellido_paterno || ''} ${pacienteInfo.apellido_materno || ''}`.trim();
-          await sendSolicitudCambioPsicologoEmail({
-            nombresPaciente,
-            dniPaciente: pacienteInfo.dni,
-            servicio: citaData.servicio,
-            psicologoAnterior: psicologoAnteriorNombre,
-            psicologoNuevo: citaData.psicologa_nombre,
-            motivo: justificacion_cambio_solicitud
-          });
+          if (!getErr && coupon) {
+            await supabase
+              .from('cupones')
+              .update({ cantidad_usos_actual: (coupon.cantidad_usos_actual || 0) + 1 })
+              .eq('id', cupon_id);
+          }
         }
-      } catch (mailErr) {
-        console.error('Error al procesar notificación de cambio:', mailErr.message);
+      } catch (couponErr) {
+        console.error('Error procesando el uso del cupón:', couponErr.message);
       }
     }
 
-    // Decrement credit if this cita uses an acquired package
+    // Decrement credit if this cita uses an acquired package (for both Session #1 and Session #2+)
     if (citaData.paquete_id) {
       const { data: packData, error: packFetchError } = await supabase
         .from('paquetes_adquiridos')
@@ -332,6 +502,105 @@ export const postCrearCita = async (req, res) => {
           .eq('id', citaData.paquete_id);
         if (packUpdateError) {
           console.error('Error al descontar crédito del paquete:', packUpdateError.message);
+        } else {
+          // If this is Session #2+ (meaning it was not the first session), insert usage row into cupones_usos
+          if (!isFirstSession) {
+            const { error: usageErr } = await supabase
+              .from('cupones_usos')
+              .insert([{
+                paciente_id: citaData.paciente_id,
+                cita_id: data.id,
+                paquete_adquirido_id: citaData.paquete_id,
+                cupon_id: null
+              }]);
+            if (usageErr) {
+              console.error('Error al registrar consumo de paquete en cupones_usos:', usageErr.message);
+            }
+          } else {
+            // If this is Session #1, fetch and insert included procedures/trámites and package promotion historical record
+            try {
+              if (resolvedPaqueteCatalogoId) {
+                // Fetch and insert included procedures/trámites
+                const { data: catalogTramites, error: fetchTramitesErr } = await supabase
+                  .from('paquetes_catalogo_tramites_incluidos')
+                  .select('servicio_tramite_id, cantidad, servicios(nombre_servicio)')
+                  .eq('paquete_catalogo_id', resolvedPaqueteCatalogoId);
+
+                if (fetchTramitesErr) {
+                  console.error("Error en traspaso de trámites (fetch):", fetchTramitesErr);
+                }
+
+                if (catalogTramites && catalogTramites.length > 0) {
+                  const insertTramites = catalogTramites.map(t => {
+                    const nombre_servicio = t.servicios
+                      ? (Array.isArray(t.servicios) ? t.servicios[0]?.nombre_servicio : t.servicios.nombre_servicio)
+                      : 'Trámite Incluido';
+
+                    return {
+                      paquete_adquirido_id: citaData.paquete_id,
+                      servicio_tramite_id: t.servicio_tramite_id,
+                      nombre_tramite_snapshot: nombre_servicio,
+                      cantidad_total: t.cantidad || 1,
+                      cantidad_usada: 0
+                    };
+                  });
+
+                  const { error: bulkInsertErr } = await supabase
+                    .from('paquetes_adquiridos_tramites_incluidos')
+                    .insert(insertTramites);
+
+                  if (bulkInsertErr) {
+                    console.error("Error en traspaso de trámites (insert):", bulkInsertErr);
+                  } else {
+                    console.log("Trámites de paquete registrados con éxito:", insertTramites);
+                  }
+                }
+
+                // If promotion was active on catalog package, record in cupones_usos
+                const { data: catalogPack, error: fetchCatPackErr } = await supabase
+                  .from('paquetes_catalogo')
+                  .select('*')
+                  .eq('id', resolvedPaqueteCatalogoId)
+                  .single();
+
+                if (fetchCatPackErr) {
+                  console.error("Error en traspaso de trámites (fetch catalog pack):", fetchCatPackErr);
+                }
+
+                if (catalogPack) {
+                  const todayStr = new Date().toLocaleDateString('sv-SE');
+                  const datesOk = (!catalogPack.promo_fecha_inicio || todayStr >= catalogPack.promo_fecha_inicio) && 
+                                  (!catalogPack.promo_fecha_fin || todayStr <= catalogPack.promo_fecha_fin);
+                  const isPromoActive = catalogPack.promocion_activa && datesOk;
+
+                  if (isPromoActive) {
+                    // Check if coupon usage record was already created for this citation
+                    const { data: existingUsage } = await supabase
+                      .from('cupones_usos')
+                      .select('id')
+                      .eq('cita_id', data.id)
+                      .maybeSingle();
+
+                    if (!existingUsage) {
+                      const { error: promoLogErr } = await supabase
+                        .from('cupones_usos')
+                        .insert([{
+                          paciente_id: citaData.paciente_id,
+                          cita_id: data.id,
+                          paquete_adquirido_id: citaData.paquete_id,
+                          cupon_id: null
+                        }]);
+                      if (promoLogErr) {
+                        console.error("Error en traspaso de trámites (promo log error):", promoLogErr);
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (err) {
+              console.error("Error en traspaso de trámites (catch general):", err);
+            }
+          }
         }
       } else if (packFetchError) {
         console.error('Error al leer crédito del paquete:', packFetchError.message);
@@ -494,15 +763,159 @@ export const putCancelarCita = async (req, res) => {
       return res.status(403).json({ success: false, error: 'No tienes permiso para cancelar esta cita.' });
     }
 
-    const { data, error } = await supabase
+    // Select actual appointment details to verify payment status, package usage, and benefit flags
+    const { data: appointment, error: fetchErr } = await supabase
       .from('citas')
-      .update({ estado_cita: 'Cancelado', estado_pago: 'Rechazado' })
+      .select('estado_pago, metodo_pago, paquete_id, cupon_aplicado, promocion_aplicada')
       .eq('id', id)
-      .select()
       .single();
 
-    if (error) throw error;
-    return res.json({ success: true, data });
+    if (fetchErr || !appointment) {
+      return res.status(404).json({ success: false, error: 'Cita no encontrada.' });
+    }
+
+    const { estado_pago, metodo_pago, paquete_id, cupon_aplicado, promocion_aplicada } = appointment;
+
+    // Strict Rule: cannot cancel if paid individually (metodo_pago !== 'Saldo de Paquete' and estado_pago === 'Pagado')
+    if (estado_pago === 'Pagado' && metodo_pago !== 'Saldo de Paquete') {
+      return res.status(400).json({ success: false, error: 'No es posible cancelar una cita que ya fue pagada.' });
+    }
+
+    const updates = { estado_cita: 'Cancelado', estado_pago: 'Cancelado' };
+
+    // --- REGLA DE LIBERACIÓN DE BENEFICIOS ---
+    if ((cupon_aplicado || promocion_aplicada) && estado_pago === 'Pendiente') {
+      updates.cupon_aplicado = false;
+      updates.promocion_aplicada = false;
+
+      try {
+        // Find if there is a coupon usage record for this citation
+        const { data: usage, error: usageErr } = await supabase
+          .from('cupones_usos')
+          .select('cupon_id')
+          .eq('cita_id', id)
+          .maybeSingle();
+
+        if (!usageErr && usage) {
+          // If it was a coupon usage, decrement uses count on the coupon table
+          if (usage.cupon_id) {
+            const { data: coupon, error: getErr } = await supabase
+              .from('cupones')
+              .select('cantidad_usos_actual')
+              .eq('id', usage.cupon_id)
+              .maybeSingle();
+
+            if (!getErr && coupon) {
+              const newCount = Math.max(0, (coupon.cantidad_usos_actual || 0) - 1);
+              await supabase
+                .from('cupones')
+                .update({ cantidad_usos_actual: newCount })
+                .eq('id', usage.cupon_id);
+            }
+          }
+
+          // Delete the usage record completely (covers both coupon and promotion usage records)
+          await supabase
+            .from('cupones_usos')
+            .delete()
+            .eq('cita_id', id);
+        }
+      } catch (couponCancelErr) {
+        console.error('Error al liberar cupón/promoción en cancelación:', couponCancelErr.message);
+      }
+    }
+
+    // --- CASE 1: Session #1 Cancellation (Aborted package acquisition) ---
+    const isSessionOne = (estado_pago === 'Pendiente') && (metodo_pago === 'Pago Online' || metodo_pago === 'Pago en Clinica');
+    if (paquete_id && isSessionOne) {
+      const { data, error } = await supabase
+        .from('citas')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Delete included procedures from packages_adquiridos_tramites_incluidos
+      const { error: deleteTramitesErr } = await supabase
+        .from('paquetes_adquiridos_tramites_incluidos')
+        .delete()
+        .eq('paquete_adquirido_id', paquete_id);
+
+      if (deleteTramitesErr) {
+        console.error('Error al eliminar trámites incluidos del paquete:', deleteTramitesErr.message);
+      }
+
+      // Delete the package record completely from packages table
+      const { error: deletePackErr } = await supabase
+        .from('paquetes_adquiridos')
+        .delete()
+        .eq('id', paquete_id);
+
+      if (deletePackErr) {
+        console.error('Error al eliminar paquete adquirido tras cancelar la sesión #1:', deletePackErr.message);
+      }
+
+      return res.json({ success: true, data });
+    }
+
+    // --- CASE 2: Session #2+ Cancellation (Saldo de Paquete balance refund) ---
+    else if (paquete_id && metodo_pago === 'Saldo de Paquete') {
+      const { data, error } = await supabase
+        .from('citas')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Delete the package usage record in cupones_usos
+      const { error: usageDeleteErr } = await supabase
+        .from('cupones_usos')
+        .delete()
+        .eq('cita_id', id)
+        .eq('paquete_adquirido_id', paquete_id);
+
+      if (usageDeleteErr) {
+        console.error('Error al eliminar registro de uso de paquete en cupones_usos:', usageDeleteErr.message);
+      }
+
+      // Reintegrate credit to the package (+1)
+      const { data: packData, error: packFetchErr } = await supabase
+        .from('paquetes_adquiridos')
+        .select('sesiones_disponibles')
+        .eq('id', paquete_id)
+        .single();
+
+      if (!packFetchErr && packData) {
+        const newCount = (packData.sesiones_disponibles || 0) + 1;
+        const { error: packUpdateErr } = await supabase
+          .from('paquetes_adquiridos')
+          .update({ sesiones_disponibles: newCount })
+          .eq('id', paquete_id);
+
+        if (packUpdateErr) {
+          console.error('Error al reintegrar saldo del paquete:', packUpdateErr.message);
+        }
+      }
+
+      return res.json({ success: true, data });
+    }
+
+    // --- CASE 3: Standard Individual Appointment Cancellation ---
+    else {
+      const { data, error } = await supabase
+        .from('citas')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return res.json({ success: true, data });
+    }
   } catch (error) {
     console.error('Error en putCancelarCita:', error.message);
     return res.status(500).json({ success: false, error: error.message });

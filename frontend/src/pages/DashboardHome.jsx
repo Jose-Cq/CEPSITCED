@@ -117,9 +117,11 @@ const DashboardHome = () => {
       Pendiente: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
       Confirmado: { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200' },
       Confirmada: { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200' },
-      Realizada: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-200' },
-      Completada: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-200' },
-      Cancelado: { bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-200' },
+      Realizada: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
+      Completada: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
+      Atendido: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
+      Cancelado: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' },
+      Ausente: { bg: 'bg-slate-50', text: 'text-slate-650', border: 'border-slate-200' },
       Reprogramada: { bg: 'bg-purple-50', text: 'text-purple-800', border: 'border-purple-200' },
     };
     const style = badges[displayEstado] || badges.Pendiente;

@@ -9,6 +9,7 @@ import especialistasRoutes from './routes/especialistas.js';
 import pacientesRoutes from './routes/pacientes.js';
 import citasRoutes from './routes/citas.js';
 import pagosRoutes from './routes/pagos.js';
+import authRoutes from './routes/auth.js';
 
 dotenv.config();
 
@@ -35,6 +36,7 @@ app.use('/api/especialistas', especialistasRoutes);
 app.use('/api/pacientes', pacientesRoutes);
 app.use('/api/citas', citasRoutes);
 app.use('/api/pagos', pagosRoutes);
+app.use('/api/auth', authRoutes);
 
 // Manejo centralizado de errores
 app.use((err, req, res, next) => {

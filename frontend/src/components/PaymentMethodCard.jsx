@@ -20,8 +20,8 @@ const PaymentMethodCard = ({
             <p className="text-xs text-emerald-700 mt-0.5 font-medium">
               Se utilizará una sesión de tu paquete "{paqueteSeleccionado.nombre_paquete_snapshot || paqueteSeleccionado.nombre_paquete}".
             </p>
-            <p className="text-[10px] text-emerald-600 font-bold mt-1.5 uppercase">
-              Método de pago: {paqueteSeleccionado.metodo_pago}
+            <p className="text-[11px] text-emerald-700 font-bold mt-1.5 font-medium">
+              Sesiones disponibles en tu paquete: {paqueteSeleccionado.sesiones_disponibles}
             </p>
           </div>
         </div>

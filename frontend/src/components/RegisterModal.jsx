@@ -427,35 +427,9 @@ const RegisterModal = ({ isOpen, onClose }) => {
         throw new Error(response.error);
       }
 
-      // Iniciar sesión en el frontend usando la sesión devuelta si existe
-      const session = response.data?.authData?.session;
-      if (session) {
-        await supabase.auth.setSession({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token
-        });
-      }
-
-      if (!isProxy) {
-        const hcMostrada = response.data?.hcMostrada || '';
-        setSuccessMessage(`¡Registro exitoso! Historia Clínica: ${hcMostrada}. Redirigiendo al portal...`);
-        sessionStorage.removeItem('is_registering');
-        setTimeout(() => {
-          resetForm();
-          onClose();
-          window.location.href = '/dashboard';
-        }, 3000);
-      } else {
-        const hcPacienteMostrada = response.data?.hcPacienteMostrada || '';
-        const hcApoderadoMostrada = response.data?.hcApoderadoMostrada || '';
-        setSuccessMessage(`¡Registro exitoso! HC Paciente: ${hcPacienteMostrada}, HC Apoderado: ${hcApoderadoMostrada}. Redirigiendo al portal...`);
-        sessionStorage.removeItem('is_registering');
-        setTimeout(() => {
-          resetForm();
-          onClose();
-          window.location.href = '/dashboard';
-        }, 3000);
-      }
+      // No iniciamos sesión en el cliente porque la cuenta requiere activación por email
+      setSuccessMessage('REGISTRO_EXITOSO');
+      sessionStorage.removeItem('is_registering');
     } catch (error) {
       sessionStorage.removeItem('is_registering');
       setSubmitError(error.message);
@@ -561,16 +535,6 @@ const RegisterModal = ({ isOpen, onClose }) => {
           </button>
         </header>
 
-        {successMessage && (
-          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm animate-fade-in">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="material-symbols-outlined text-green-600">check_circle</span>
-              <span className="font-bold">Registro Completado</span>
-            </div>
-            {successMessage}
-          </div>
-        )}
-
         {submitError && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm animate-fade-in">
             <div className="flex items-center gap-2">
@@ -580,7 +544,27 @@ const RegisterModal = ({ isOpen, onClose }) => {
           </div>
         )}
 
-        {!successMessage && (
+        {successMessage ? (
+          <div className="flex flex-col items-center justify-center text-center py-10 px-4 animate-in fade-in duration-300">
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-emerald-100 text-emerald-600 mb-6 shadow-sm">
+              <span className="material-symbols-outlined text-5xl">mail</span>
+            </div>
+            <h3 className="text-2xl font-black text-[#003178] uppercase mb-4 tracking-tight">¡Registro Exitoso!</h3>
+            <p className="text-gray-600 max-w-md mb-8 text-base leading-relaxed">
+              📩 Hemos enviado un enlace de verificación a tu correo electrónico. Por favor, revisa tu bandeja de entrada (y la carpeta de spam) para activar tu cuenta antes de iniciar sesión.
+            </p>
+            <button
+              onClick={() => {
+                resetForm();
+                onClose();
+                window.location.href = '/login';
+              }}
+              className="px-8 py-4 bg-[#003178] text-white font-black rounded-2xl shadow-lg hover:bg-blue-900 transition-all uppercase tracking-widest text-xs hover:scale-[1.02] active:scale-95"
+            >
+              Ir al inicio de sesión
+            </button>
+          </div>
+        ) : (
           <>
             <nav className="flex gap-4 mb-8 p-1 bg-gray-100 rounded-2xl w-fit">
               <button type="button" onClick={() => handleToggleProxy(false)} className={`px-8 py-2.5 rounded-xl text-xs font-black transition-all ${!isProxy ? 'bg-white text-[#003178] shadow-md' : 'text-gray-400'}`}>PACIENTE</button>

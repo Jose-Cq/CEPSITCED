@@ -3,6 +3,9 @@ import { cleanDni } from '../utils/validators.js';
 import { generarSiguienteHC } from '../utils/generateHC.js';
 import { generateToken, verifyToken } from '../utils/cryptoToken.js';
 import { sendIndependizacionEmail } from '../utils/mailer.js';
+import crypto from 'crypto';
+import { enviarCorreoVerificacionCuenta, enviarCorreoIndependizacion } from '../services/emailService.js';
+
 
 // Helper para filtrar solo columnas válidas para la tabla "pacientes"
 const filterValidPatientFields = (data) => {
@@ -500,7 +503,8 @@ export const registrarPacienteConsolidado = async (req, res) => {
           apellido_materno: toTitleCase(patientData.apellidoMaterno) || null,
           fecha_nacimiento: patientData.fechaNacimiento,
           telefono: patientData.telefono || null,
-          correo: authEmail
+          correo: authEmail,
+          activo: false
         }]);
 
       if (perfilErr) throw new Error(`Error al crear perfil de usuario: ${perfilErr.message}`);
@@ -590,6 +594,36 @@ export const registrarPacienteConsolidado = async (req, res) => {
         }
       }
 
+      // Generar token de verificación
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
+      const expiraEn = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 horas
+
+      // Insertar token en tokens_verificacion
+      const { error: tokenErr } = await supabase
+        .from('tokens_verificacion')
+        .insert([{
+          perfil_id: authId,
+          token_hash: tokenHash,
+          expira_en: expiraEn.toISOString()
+        }]);
+
+      if (tokenErr) {
+        throw new Error(`Error al crear el token de verificación: ${tokenErr.message}`);
+      }
+
+      // Enviar correo de verificación
+      const verifyLink = `${req.protocol}://${req.get('host')}/api/auth/confirmar-cuenta/${verificationToken}`;
+      const emailResult = await enviarCorreoVerificacionCuenta(
+        authEmail,
+        patientData.nombres,
+        verifyLink
+      );
+
+      if (!emailResult.success) {
+        throw new Error(`No se pudo enviar el correo de verificación: ${emailResult.error}`);
+      }
+
       return res.json({
         success: true,
         data: {
@@ -612,7 +646,8 @@ export const registrarPacienteConsolidado = async (req, res) => {
           apellido_materno: toTitleCase(proxyData.apellidoMaterno) || null,
           fecha_nacimiento: proxyData.fechaNacimiento,
           telefono: proxyData.telefono || null,
-          correo: authEmail
+          correo: authEmail,
+          activo: false
         }]);
 
       if (perfilErr) throw new Error(`Error al crear perfil del apoderado: ${perfilErr.message}`);
@@ -773,6 +808,36 @@ export const registrarPacienteConsolidado = async (req, res) => {
         }
       }
 
+      // Generar token de verificación
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
+      const expiraEn = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 horas
+
+      // Insertar token en tokens_verificacion
+      const { error: tokenErr } = await supabase
+        .from('tokens_verificacion')
+        .insert([{
+          perfil_id: authId,
+          token_hash: tokenHash,
+          expira_en: expiraEn.toISOString()
+        }]);
+
+      if (tokenErr) {
+        throw new Error(`Error al crear el token de verificación: ${tokenErr.message}`);
+      }
+
+      // Enviar correo de verificación
+      const verifyLink = `${req.protocol}://${req.get('host')}/api/auth/confirmar-cuenta/${verificationToken}`;
+      const emailResult = await enviarCorreoVerificacionCuenta(
+        authEmail,
+        proxyData.nombres,
+        verifyLink
+      );
+
+      if (!emailResult.success) {
+        throw new Error(`No se pudo enviar el correo de verificación: ${emailResult.error}`);
+      }
+
       return res.json({
         success: true,
         data: {
@@ -844,6 +909,23 @@ export const recuperarAcceso = async (req, res) => {
       });
     }
     
+    // Validar si es mayor de edad (>= 18 años)
+    if (paciente.fecha_nacimiento) {
+      const birthDate = new Date(paciente.fecha_nacimiento);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const m = today.getMonth() - birthDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      if (age < 18) {
+        return res.status(400).json({
+          success: false,
+          error: 'El paciente es menor de edad y no puede independizar su cuenta. Por favor, comunícate con tu apoderado o asesor.'
+        });
+      }
+    }
+    
     // Si tiene id_perfil_propio pero no se encontró en perfiles
     if (paciente.id_perfil_propio) {
       return res.status(400).json({
@@ -901,14 +983,30 @@ export const recuperarAcceso = async (req, res) => {
       });
     }
     
-    // Generar token criptográfico que expira en 24 horas
-    const token = generateToken({ id_paciente: paciente.id_paciente, dni: dniClean });
+    // Generar token de independización
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
+    const expiraEn = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 horas
+
+    // Insertar token en tokens_independizacion
+    const { error: tokenErr } = await supabase
+      .from('tokens_independizacion')
+      .insert([{
+        paciente_id: paciente.id_paciente,
+        token_hash: tokenHash,
+        expira_en: expiraEn.toISOString()
+      }]);
+
+    if (tokenErr) {
+      throw new Error(`Error al crear el token de independización: ${tokenErr.message}`);
+    }
     
     // Nombre completo del paciente
     const nombresCompletos = `${paciente.nombres || ''} ${paciente.apellido_paterno || ''} ${paciente.apellido_materno || ''}`.trim();
     
-    // Enviar correo de independización
-    const emailResult = await sendIndependizacionEmail(finalEmail, nombresCompletos, token, req);
+    // Enviar correo de independización al apoderado (titular a cargo)
+    const approvalLink = `${req.protocol}://${req.get('host')}/api/auth/independizacion/aprobar/${verificationToken}`;
+    const emailResult = await enviarCorreoIndependizacion(finalEmail, nombresCompletos, approvalLink);
     
     if (!emailResult.success) {
       return res.status(500).json({
@@ -921,8 +1019,7 @@ export const recuperarAcceso = async (req, res) => {
       success: true,
       flow: 'INDEPENDIZACION',
       email: finalEmail,
-      sent: true,
-      etherealUrl: emailResult.etherealUrl || null
+      sent: true
     });
     
   } catch (err) {
@@ -939,8 +1036,17 @@ export const verificarTokenIndependizacion = async (req, res) => {
   }
   
   try {
-    const payload = verifyToken(token);
-    if (!payload) {
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const now = new Date().toISOString();
+
+    const { data: record, error: findRecordError } = await supabase
+      .from('tokens_independizacion')
+      .select('*')
+      .eq('token_hash', tokenHash)
+      .gt('expira_en', now)
+      .maybeSingle();
+
+    if (findRecordError || !record) {
       return res.status(400).json({ success: false, error: 'El token es inválido o ha expirado.' });
     }
     
@@ -948,7 +1054,7 @@ export const verificarTokenIndependizacion = async (req, res) => {
     const { data: paciente, error: errPac } = await supabase
       .from('pacientes')
       .select('id_paciente, dni, nombres, apellido_paterno, apellido_materno, id_perfil_propio, correo')
-      .eq('id_paciente', payload.id_paciente)
+      .eq('id_paciente', record.paciente_id)
       .maybeSingle();
       
     if (errPac) throw errPac;
@@ -989,8 +1095,17 @@ export const completarIndependizacion = async (req, res) => {
   
   let createdAuthId = null;
   try {
-    const payload = verifyToken(token);
-    if (!payload) {
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const now = new Date().toISOString();
+
+    const { data: record, error: findRecordError } = await supabase
+      .from('tokens_independizacion')
+      .select('*')
+      .eq('token_hash', tokenHash)
+      .gt('expira_en', now)
+      .maybeSingle();
+
+    if (findRecordError || !record) {
       return res.status(400).json({ success: false, error: 'El token es inválido o ha expirado.' });
     }
     
@@ -998,7 +1113,7 @@ export const completarIndependizacion = async (req, res) => {
     const { data: paciente, error: errPac } = await supabase
       .from('pacientes')
       .select('*')
-      .eq('id_paciente', payload.id_paciente)
+      .eq('id_paciente', record.paciente_id)
       .maybeSingle();
       
     if (errPac) throw errPac;
@@ -1055,7 +1170,8 @@ export const completarIndependizacion = async (req, res) => {
         apellido_materno: paciente.apellido_materno,
         fecha_nacimiento: paciente.fecha_nacimiento,
         telefono: paciente.telefono,
-        correo: emailClean
+        correo: emailClean,
+        activo: true
       }]);
       
     if (errPerfil) {
@@ -1076,6 +1192,12 @@ export const completarIndependizacion = async (req, res) => {
     if (errUpdatePac) {
       throw new Error(`Error al actualizar la ficha del paciente: ${errUpdatePac.message}`);
     }
+
+    // Eliminar el token de independización
+    await supabase
+      .from('tokens_independizacion')
+      .delete()
+      .eq('id', record.id);
     
     return res.json({
       success: true,
