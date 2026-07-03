@@ -569,25 +569,79 @@ const toTitleCase = (value) => {
 
 // Registro unificado de paciente independiente, apoderado y dependiente desde el backend
 export const registrarPacienteConsolidado = async (req, res) => {
-  const { isProxy, password, patientData, proxyData } = req.body;
+  const { 
+    isProxy, 
+    password, 
+    patientData, 
+    proxyData,
+    direccion,
+    departamento,
+    provincia,
+    distrito,
+    genero,
+    sexo,
+    pais,
+    lugarFamilia,
+    lugar_familia,
+    estadoCivil,
+    estado_civil,
+    gradoInstruccion,
+    grado_instruccion,
+    ocupacion,
+    fechaNacimiento,
+    fecha_nacimiento,
+    telefono,
+    nombres,
+    apellidoPaterno,
+    apellido_paterno,
+    apellidoMaterno,
+    apellido_materno,
+    correo,
+    correoReal
+  } = req.body;
+
   let authId = null;
 
   try {
-    const patientDniClean = String(patientData?.dni || '').replace(/\D/g, '');
-    const proxyDniClean = isProxy ? String(proxyData?.dni || '').replace(/\D/g, '') : '';
-    const isPeru = String(patientData?.pais || '').trim().toLowerCase().startsWith('per');
+    const patientDniClean = String(patientData?.dni || req.body.dni || '').replace(/\D/g, '');
+    const proxyDniClean = isProxy ? String(proxyData?.dni || req.body.proxyDni || '').replace(/\D/g, '') : '';
+    
+    // Unificar campos del paciente con fallbacks robustos
+    const finalDireccion = patientData?.direccion || direccion;
+    const finalPais = patientData?.pais || pais;
+    const finalDepartamento = patientData?.departamento || departamento;
+    const finalProvincia = patientData?.provincia || provincia;
+    const finalDistrito = patientData?.distrito || distrito;
+    const finalGenero = patientData?.genero || genero || sexo;
+    
+    const finalLugarFamilia = patientData?.lugarFamilia || lugarFamilia || lugar_familia;
+    const finalEstadoCivil = patientData?.estadoCivil || estadoCivil || estado_civil;
+    const finalGradoInstruccion = patientData?.gradoInstruccion || gradoInstruccion || grado_instruccion;
+    const finalOcupacion = patientData?.ocupacion || ocupacion;
+    
+    const finalFechaNacimiento = patientData?.fechaNacimiento || fechaNacimiento || fecha_nacimiento;
+    const finalTelefono = patientData?.telefono || telefono;
+    
+    const finalNombres = patientData?.nombres || nombres;
+    const finalApellidoPaterno = patientData?.apellidoPaterno || apellidoPaterno || apellido_paterno;
+    const finalApellidoMaterno = patientData?.apellidoMaterno || apellidoMaterno || apellido_materno;
+    
+    const finalCorreoReal = patientData?.correoReal || correoReal || correo;
 
-    console.log('[registrarPacienteConsolidado] Iniciando registro:', {
+    const isPeru = String(finalPais || '').trim().toLowerCase().startsWith('per');
+
+    console.log('[registrarPacienteConsolidado] Iniciando registro unificado:', {
       isProxy,
       patientDniClean,
       proxyDniClean,
       isPeru,
       patientLocation: {
-        pais: patientData?.pais,
-        departamento: patientData?.departamento,
-        provincia: patientData?.provincia,
-        distrito: patientData?.distrito,
-        direccion: patientData?.direccion
+        pais: finalPais,
+        departamento: finalDepartamento,
+        provincia: finalProvincia,
+        distrito: finalDistrito,
+        direccion: finalDireccion,
+        genero: finalGenero
       }
     });
 
@@ -611,8 +665,8 @@ export const registrarPacienteConsolidado = async (req, res) => {
 
     // 2. Registro Auth en Supabase
     const authEmail = isProxy 
-      ? proxyData.correoReal.trim().toLowerCase() 
-      : patientData.correoReal.trim().toLowerCase();
+      ? (proxyData?.correoReal || finalCorreoReal || '').trim().toLowerCase() 
+      : (finalCorreoReal || '').trim().toLowerCase();
 
     // signUp en Supabase utilizando la instancia service role
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -633,21 +687,25 @@ export const registrarPacienteConsolidado = async (req, res) => {
     // --- CASO 1: PACIENTE INDEPENDIENTE ---
     if (!isProxy) {
       // 3. Crear Perfil
-      const { error: perfilErr } = await supabase
+      const { data: newPerfil, error: perfilErr } = await supabase
         .from('perfiles')
         .insert([{
           id: authId,
           dni: patientDniClean,
-          nombres: toTitleCase(patientData.nombres) || null,
-          apellido_paterno: toTitleCase(patientData.apellidoPaterno) || null,
-          apellido_materno: toTitleCase(patientData.apellidoMaterno) || null,
-          fecha_nacimiento: patientData.fechaNacimiento,
-          telefono: patientData.telefono || null,
+          nombres: toTitleCase(finalNombres) || null,
+          apellido_paterno: toTitleCase(finalApellidoPaterno) || null,
+          apellido_materno: toTitleCase(finalApellidoMaterno) || null,
+          fecha_nacimiento: finalFechaNacimiento,
+          telefono: finalTelefono || null,
           correo: authEmail,
           activo: false
-        }]);
+        }])
+        .select()
+        .single();
 
       if (perfilErr) throw new Error(`Error al crear perfil de usuario: ${perfilErr.message}`);
+      
+      const profileId = newPerfil.id;
 
       // 4. Crear Ficha Clínica en Pacientes (con reintento de colisión HC 23505)
       let patientHC = '';
@@ -665,23 +723,23 @@ export const registrarPacienteConsolidado = async (req, res) => {
         const { error: pacUpdateErr } = await supabase
           .from('pacientes')
           .update({
-            id_perfil_propio: authId,
-            nombres: toTitleCase(patientData.nombres) || pacienteExistente.nombres,
-            apellido_paterno: toTitleCase(patientData.apellidoPaterno) || pacienteExistente.apellido_paterno,
-            apellido_materno: toTitleCase(patientData.apellidoMaterno) || pacienteExistente.apellido_materno,
-            telefono: patientData.telefono || pacienteExistente.telefono,
+            id_perfil_propio: profileId,
+            nombres: toTitleCase(finalNombres) || pacienteExistente.nombres,
+            apellido_paterno: toTitleCase(finalApellidoPaterno) || pacienteExistente.apellido_paterno,
+            apellido_materno: toTitleCase(finalApellidoMaterno) || pacienteExistente.apellido_materno,
+            telefono: finalTelefono || pacienteExistente.telefono,
             correo: authEmail,
-            genero: patientData.genero,
-            fecha_nacimiento: patientData.fechaNacimiento,
-            pais: toTitleCase(patientData.pais) || pacienteExistente.pais,
-            departamento: isPeru ? (toTitleCase(patientData.departamento) || pacienteExistente.departamento) : null,
-            provincia: isPeru ? (toTitleCase(patientData.provincia) || pacienteExistente.provincia) : null,
-            distrito: isPeru ? (toTitleCase(patientData.distrito) || pacienteExistente.distrito) : null,
-            direccion: toTitleCase(patientData.direccion) || pacienteExistente.direccion,
-            lugar_familia: toTitleCase(patientData.lugarFamilia) || pacienteExistente.lugar_familia,
-            estado_civil: toTitleCase(patientData.estadoCivil) || pacienteExistente.estado_civil,
-            grado_instruccion: toTitleCase(patientData.gradoInstruccion) || pacienteExistente.grado_instruccion,
-            ocupacion: toTitleCase(patientData.ocupacion) || pacienteExistente.ocupacion,
+            genero: finalGenero || pacienteExistente.genero,
+            fecha_nacimiento: finalFechaNacimiento || pacienteExistente.fecha_nacimiento,
+            pais: toTitleCase(finalPais) || pacienteExistente.pais,
+            departamento: isPeru ? (toTitleCase(finalDepartamento) || pacienteExistente.departamento) : null,
+            provincia: isPeru ? (toTitleCase(finalProvincia) || pacienteExistente.provincia) : null,
+            distrito: isPeru ? (toTitleCase(finalDistrito) || pacienteExistente.distrito) : null,
+            direccion: toTitleCase(finalDireccion) || pacienteExistente.direccion,
+            lugar_familia: toTitleCase(finalLugarFamilia) || pacienteExistente.lugar_familia,
+            estado_civil: toTitleCase(finalEstadoCivil) || pacienteExistente.estado_civil,
+            grado_instruccion: toTitleCase(finalGradoInstruccion) || pacienteExistente.grado_instruccion,
+            ocupacion: toTitleCase(finalOcupacion) || pacienteExistente.ocupacion,
             estado_cuenta: 'INDEPENDIENTE'
           })
           .eq('id_paciente', pacienteExistente.id_paciente);
@@ -692,31 +750,31 @@ export const registrarPacienteConsolidado = async (req, res) => {
         while (attempts < 3 && !insertSuccess) {
           attempts++;
           try {
-            patientHC = await generarSiguienteHC(supabase, patientData.fechaNacimiento, patientData.genero, generatedHCs);
+            patientHC = await generarSiguienteHC(supabase, finalFechaNacimiento, finalGenero, generatedHCs);
             
             const { error: pacInsErr } = await supabase
               .from('pacientes')
               .insert([{
                 numero_hc: patientHC,
                 dni: patientDniClean,
-                genero: patientData.genero,
-                fecha_nacimiento: patientData.fechaNacimiento,
-                lugar_familia: toTitleCase(patientData.lugarFamilia) || null,
-                estado_civil: toTitleCase(patientData.estadoCivil) || null,
-                grado_instruccion: toTitleCase(patientData.gradoInstruccion) || null,
-                ocupacion: toTitleCase(patientData.ocupacion) || null,
-                direccion: toTitleCase(patientData.direccion) || null,
-                telefono: patientData.telefono || null,
+                genero: finalGenero,
+                fecha_nacimiento: finalFechaNacimiento,
+                lugar_familia: toTitleCase(finalLugarFamilia) || null,
+                estado_civil: toTitleCase(finalEstadoCivil) || null,
+                grado_instruccion: toTitleCase(finalGradoInstruccion) || null,
+                ocupacion: toTitleCase(finalOcupacion) || null,
+                direccion: toTitleCase(finalDireccion) || null,
+                telefono: finalTelefono || null,
                 correo: authEmail,
-                nombres: toTitleCase(patientData.nombres) || null,
-                apellido_paterno: toTitleCase(patientData.apellidoPaterno) || null,
-                apellido_materno: toTitleCase(patientData.apellidoMaterno) || null,
-                pais: toTitleCase(patientData.pais) || null,
-                departamento: isPeru ? toTitleCase(patientData.departamento) : null,
-                provincia: isPeru ? toTitleCase(patientData.provincia) : null,
-                distrito: isPeru ? toTitleCase(patientData.distrito) : null,
+                nombres: toTitleCase(finalNombres) || null,
+                apellido_paterno: toTitleCase(finalApellidoPaterno) || null,
+                apellido_materno: toTitleCase(finalApellidoMaterno) || null,
+                pais: toTitleCase(finalPais) || null,
+                departamento: isPeru ? toTitleCase(finalDepartamento) : null,
+                provincia: isPeru ? toTitleCase(finalProvincia) : null,
+                distrito: isPeru ? toTitleCase(finalDistrito) : null,
                 estado_cuenta: 'INDEPENDIENTE',
-                id_perfil_propio: authId,
+                id_perfil_propio: profileId,
                 id_apoderado: null
               }]);
 
@@ -743,7 +801,7 @@ export const registrarPacienteConsolidado = async (req, res) => {
       const { error: tokenErr } = await supabase
         .from('tokens_verificacion')
         .insert([{
-          perfil_id: authId,
+          perfil_id: profileId,
           token_hash: tokenHash,
           expira_en: expiraEn.toISOString()
         }]);
@@ -756,7 +814,7 @@ export const registrarPacienteConsolidado = async (req, res) => {
       const verifyLink = `${req.protocol}://${req.get('host')}/api/auth/confirmar-cuenta/${verificationToken}`;
       const emailResult = await enviarCorreoVerificacionCuenta(
         authEmail,
-        patientData.nombres,
+        finalNombres,
         verifyLink
       );
 
@@ -776,21 +834,25 @@ export const registrarPacienteConsolidado = async (req, res) => {
     // --- CASO 2: REGISTRO CON APODERADO (ORDEN ESTRICTO: APODERADO PRIMERO, DEPENDIENTE DESPUÉS) ---
     else {
       // 3. Crear Perfil del Apoderado
-      const { error: perfilErr } = await supabase
+      const { data: newProxyPerfil, error: perfilErr } = await supabase
         .from('perfiles')
         .insert([{
           id: authId,
           dni: proxyDniClean,
-          nombres: toTitleCase(proxyData.nombres) || null,
-          apellido_paterno: toTitleCase(proxyData.apellidoPaterno) || null,
-          apellido_materno: toTitleCase(proxyData.apellidoMaterno) || null,
-          fecha_nacimiento: proxyData.fechaNacimiento,
-          telefono: proxyData.telefono || null,
+          nombres: toTitleCase(proxyData?.nombres) || null,
+          apellido_paterno: toTitleCase(proxyData?.apellidoPaterno) || null,
+          apellido_materno: toTitleCase(proxyData?.apellidoMaterno) || null,
+          fecha_nacimiento: proxyData?.fechaNacimiento,
+          telefono: proxyData?.telefono || null,
           correo: authEmail,
           activo: false
-        }]);
+        }])
+        .select()
+        .single();
 
       if (perfilErr) throw new Error(`Error al crear perfil del apoderado: ${perfilErr.message}`);
+      
+      const proxyProfileId = newProxyPerfil.id;
 
       // 4. Crear Ficha Clínica del Apoderado en Pacientes (Campos clínicos vacíos/null permitidos)
       let proxyHC = '';
@@ -807,19 +869,19 @@ export const registrarPacienteConsolidado = async (req, res) => {
         const { error: apoUpdateErr } = await supabase
           .from('pacientes')
           .update({
-            id_perfil_propio: authId,
-            nombres: toTitleCase(proxyData.nombres) || apoderadoExistente.nombres,
-            apellido_paterno: toTitleCase(proxyData.apellidoPaterno) || apoderadoExistente.apellido_paterno,
-            apellido_materno: toTitleCase(proxyData.apellidoMaterno) || apoderadoExistente.apellido_materno,
-            telefono: proxyData.telefono || apoderadoExistente.telefono,
+            id_perfil_propio: proxyProfileId,
+            nombres: toTitleCase(proxyData?.nombres) || apoderadoExistente.nombres,
+            apellido_paterno: toTitleCase(proxyData?.apellidoPaterno) || apoderadoExistente.apellido_paterno,
+            apellido_materno: toTitleCase(proxyData?.apellidoMaterno) || apoderadoExistente.apellido_materno,
+            telefono: proxyData?.telefono || apoderadoExistente.telefono,
             correo: authEmail,
-            genero: proxyData.genero,
-            fecha_nacimiento: proxyData.fechaNacimiento,
-            direccion: toTitleCase(patientData.direccion) || apoderadoExistente.direccion,
-            pais: toTitleCase(patientData.pais) || apoderadoExistente.pais,
-            departamento: isPeru ? (toTitleCase(patientData.departamento) || apoderadoExistente.departamento) : null,
-            provincia: isPeru ? (toTitleCase(patientData.provincia) || apoderadoExistente.provincia) : null,
-            distrito: isPeru ? (toTitleCase(patientData.distrito) || apoderadoExistente.distrito) : null,
+            genero: proxyData?.genero || apoderadoExistente.genero,
+            fecha_nacimiento: proxyData?.fechaNacimiento || apoderadoExistente.fecha_nacimiento,
+            direccion: toTitleCase(finalDireccion) || apoderadoExistente.direccion,
+            pais: toTitleCase(finalPais) || apoderadoExistente.pais,
+            departamento: isPeru ? (toTitleCase(finalDepartamento) || apoderadoExistente.departamento) : null,
+            provincia: isPeru ? (toTitleCase(finalProvincia) || apoderadoExistente.provincia) : null,
+            distrito: isPeru ? (toTitleCase(finalDistrito) || apoderadoExistente.distrito) : null,
             estado_cuenta: 'INDEPENDIENTE'
           })
           .eq('id_paciente', apoderadoExistente.id_paciente);
@@ -831,27 +893,27 @@ export const registrarPacienteConsolidado = async (req, res) => {
         while (proxyAttempts < 3 && !proxyInsertSuccess) {
           proxyAttempts++;
           try {
-            proxyHC = await generarSiguienteHC(supabase, proxyData.fechaNacimiento, proxyData.genero, generatedHCs);
+            proxyHC = await generarSiguienteHC(supabase, proxyData?.fechaNacimiento, proxyData?.genero, generatedHCs);
             
             const { error: apoInsErr } = await supabase
               .from('pacientes')
               .insert([{
                 numero_hc: proxyHC,
                 dni: proxyDniClean,
-                genero: proxyData.genero,
-                fecha_nacimiento: proxyData.fechaNacimiento,
-                direccion: toTitleCase(patientData.direccion) || null,
-                telefono: proxyData.telefono || null,
+                genero: proxyData?.genero,
+                fecha_nacimiento: proxyData?.fechaNacimiento,
+                direccion: toTitleCase(finalDireccion) || null,
+                telefono: proxyData?.telefono || null,
                 correo: authEmail,
-                nombres: toTitleCase(proxyData.nombres) || null,
-                apellido_paterno: toTitleCase(proxyData.apellidoPaterno) || null,
-                apellido_materno: toTitleCase(proxyData.apellidoMaterno) || null,
-                pais: toTitleCase(patientData.pais) || null,
-                departamento: isPeru ? toTitleCase(patientData.departamento) : null,
-                provincia: isPeru ? toTitleCase(patientData.provincia) : null,
-                distrito: isPeru ? toTitleCase(patientData.distrito) : null,
+                nombres: toTitleCase(proxyData?.nombres) || null,
+                apellido_paterno: toTitleCase(proxyData?.apellidoPaterno) || null,
+                apellido_materno: toTitleCase(proxyData?.apellidoMaterno) || null,
+                pais: toTitleCase(finalPais) || null,
+                departamento: isPeru ? toTitleCase(finalDepartamento) : null,
+                provincia: isPeru ? toTitleCase(finalProvincia) : null,
+                distrito: isPeru ? toTitleCase(finalDistrito) : null,
                 estado_cuenta: 'INDEPENDIENTE',
-                id_perfil_propio: authId,
+                id_perfil_propio: proxyProfileId,
                 id_apoderado: null
               }]);
 
@@ -885,25 +947,25 @@ export const registrarPacienteConsolidado = async (req, res) => {
         const { error: pacUpdateErr } = await supabase
           .from('pacientes')
           .update({
-            id_apoderado: authId,
+            id_apoderado: proxyProfileId,
             estado_cuenta: 'STANDBY',
-            parentesco: toTitleCase(proxyData.parentesco) || pacienteExistente.parentesco,
-            nombres: toTitleCase(patientData.nombres) || pacienteExistente.nombres,
-            apellido_paterno: toTitleCase(patientData.apellidoPaterno) || pacienteExistente.apellido_paterno,
-            apellido_materno: toTitleCase(patientData.apellidoMaterno) || pacienteExistente.apellido_materno,
-            telefono: proxyData.telefono, // Heredado
+            parentesco: toTitleCase(proxyData?.parentesco) || pacienteExistente.parentesco,
+            nombres: toTitleCase(finalNombres) || pacienteExistente.nombres,
+            apellido_paterno: toTitleCase(finalApellidoPaterno) || pacienteExistente.apellido_paterno,
+            apellido_materno: toTitleCase(finalApellidoMaterno) || pacienteExistente.apellido_materno,
+            telefono: proxyData?.telefono || finalTelefono, // Heredado u opcional
             correo: authEmail, // Heredado
-            genero: patientData.genero,
-            fecha_nacimiento: patientData.fechaNacimiento,
-            direccion: toTitleCase(patientData.direccion) || pacienteExistente.direccion,
-            pais: toTitleCase(patientData.pais) || pacienteExistente.pais,
-            departamento: isPeru ? (toTitleCase(patientData.departamento) || pacienteExistente.departamento) : null,
-            provincia: isPeru ? (toTitleCase(patientData.provincia) || pacienteExistente.provincia) : null,
-            distrito: isPeru ? (toTitleCase(patientData.distrito) || pacienteExistente.distrito) : null,
-            lugar_familia: toTitleCase(patientData.lugarFamilia) || pacienteExistente.lugar_familia,
-            estado_civil: toTitleCase(patientData.estadoCivil) || pacienteExistente.estado_civil,
-            grado_instruccion: toTitleCase(patientData.gradoInstruccion) || pacienteExistente.grado_instruccion,
-            ocupacion: toTitleCase(patientData.ocupacion) || pacienteExistente.ocupacion
+            genero: finalGenero || pacienteExistente.genero,
+            fecha_nacimiento: finalFechaNacimiento || pacienteExistente.fecha_nacimiento,
+            direccion: toTitleCase(finalDireccion) || pacienteExistente.direccion,
+            pais: toTitleCase(finalPais) || pacienteExistente.pais,
+            departamento: isPeru ? (toTitleCase(finalDepartamento) || pacienteExistente.departamento) : null,
+            provincia: isPeru ? (toTitleCase(finalProvincia) || pacienteExistente.provincia) : null,
+            distrito: isPeru ? (toTitleCase(finalDistrito) || pacienteExistente.distrito) : null,
+            lugar_familia: toTitleCase(finalLugarFamilia) || pacienteExistente.lugar_familia,
+            estado_civil: toTitleCase(finalEstadoCivil) || pacienteExistente.estado_civil,
+            grado_instruccion: toTitleCase(finalGradoInstruccion) || pacienteExistente.grado_instruccion,
+            ocupacion: toTitleCase(finalOcupacion) || pacienteExistente.ocupacion
           })
           .eq('id_paciente', pacienteExistente.id_paciente);
 
@@ -913,33 +975,33 @@ export const registrarPacienteConsolidado = async (req, res) => {
         while (patientAttempts < 3 && !patientInsertSuccess) {
           patientAttempts++;
           try {
-            patientHC = await generarSiguienteHC(supabase, patientData.fechaNacimiento, patientData.genero, generatedHCs);
+            patientHC = await generarSiguienteHC(supabase, finalFechaNacimiento, finalGenero, generatedHCs);
             
             const { error: pacInsErr } = await supabase
               .from('pacientes')
               .insert([{
                 numero_hc: patientHC,
                 dni: patientDniClean,
-                genero: patientData.genero,
-                fecha_nacimiento: patientData.fechaNacimiento,
-                lugar_familia: toTitleCase(patientData.lugarFamilia) || null,
-                estado_civil: toTitleCase(patientData.estadoCivil) || null,
-                grado_instruccion: toTitleCase(patientData.gradoInstruccion) || null,
-                ocupacion: toTitleCase(patientData.ocupacion) || null,
-                direccion: toTitleCase(patientData.direccion) || null,
-                telefono: proxyData.telefono, // Heredado
+                genero: finalGenero,
+                fecha_nacimiento: finalFechaNacimiento,
+                lugar_familia: toTitleCase(finalLugarFamilia) || null,
+                estado_civil: toTitleCase(finalEstadoCivil) || null,
+                grado_instruccion: toTitleCase(finalGradoInstruccion) || null,
+                ocupacion: toTitleCase(finalOcupacion) || null,
+                direccion: toTitleCase(finalDireccion) || null,
+                telefono: proxyData?.telefono || null, // Heredado
                 correo: authEmail, // Heredado
-                nombres: toTitleCase(patientData.nombres) || null,
-                apellido_paterno: toTitleCase(patientData.apellidoPaterno) || null,
-                apellido_materno: toTitleCase(patientData.apellidoMaterno) || null,
-                pais: toTitleCase(patientData.pais) || null,
-                departamento: isPeru ? toTitleCase(patientData.departamento) : null,
-                provincia: isPeru ? toTitleCase(patientData.provincia) : null,
-                distrito: isPeru ? toTitleCase(patientData.distrito) : null,
+                nombres: toTitleCase(finalNombres) || null,
+                apellido_paterno: toTitleCase(finalApellidoPaterno) || null,
+                apellido_materno: toTitleCase(finalApellidoMaterno) || null,
+                pais: toTitleCase(finalPais) || null,
+                departamento: isPeru ? toTitleCase(finalDepartamento) : null,
+                provincia: isPeru ? toTitleCase(finalProvincia) : null,
+                distrito: isPeru ? toTitleCase(finalDistrito) : null,
                 estado_cuenta: 'STANDBY',
                 id_perfil_propio: null,
-                id_apoderado: authId,
-                parentesco: toTitleCase(proxyData.parentesco) || null
+                id_apoderado: proxyProfileId,
+                parentesco: toTitleCase(proxyData?.parentesco) || null
               }]);
 
             if (pacInsErr) {
@@ -965,7 +1027,7 @@ export const registrarPacienteConsolidado = async (req, res) => {
       const { error: tokenErr } = await supabase
         .from('tokens_verificacion')
         .insert([{
-          perfil_id: authId,
+          perfil_id: proxyProfileId,
           token_hash: tokenHash,
           expira_en: expiraEn.toISOString()
         }]);
@@ -978,7 +1040,7 @@ export const registrarPacienteConsolidado = async (req, res) => {
       const verifyLink = `${req.protocol}://${req.get('host')}/api/auth/confirmar-cuenta/${verificationToken}`;
       const emailResult = await enviarCorreoVerificacionCuenta(
         authEmail,
-        proxyData.nombres,
+        proxyData?.nombres || finalNombres,
         verifyLink
       );
 
