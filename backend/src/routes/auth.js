@@ -1,7 +1,6 @@
 import express from 'express';
 import crypto from 'crypto';
 import { supabase } from '../config/supabase.js';
-import { verifyToken, generateToken } from '../utils/cryptoToken.js';
 
 const router = express.Router();
 

@@ -1,8 +1,6 @@
 import { supabase } from '../config/supabase.js';
 import { cleanDni } from '../utils/validators.js';
 import { generarSiguienteHC } from '../utils/generateHC.js';
-import { generateToken, verifyToken } from '../utils/cryptoToken.js';
-import { sendIndependizacionEmail } from '../utils/mailer.js';
 import crypto from 'crypto';
 import { enviarCorreoVerificacionCuenta, enviarCorreoIndependizacion } from '../services/emailService.js';
 
@@ -172,7 +170,6 @@ export const getPerfilActual = async (req, res) => {
 
     // Fallback de autogeneración de perfil si no existe pero la sesión es válida en Supabase Auth
     if (!data) {
-      console.log(`[getPerfilActual] Perfil no encontrado para usuario ${authId}. Intentando autogenerar fallback...`);
       const { data: authUser, error: authUserErr } = await supabase.auth.admin.getUserById(authId);
       if (!authUserErr && authUser?.user) {
         const user = authUser.user;
@@ -204,7 +201,6 @@ export const getPerfilActual = async (req, res) => {
           .maybeSingle();
 
         if (!insErr && newPerfil) {
-          console.log(`[getPerfilActual] Perfil autogenerado con éxito para ${user.email}`);
           data = newPerfil;
         } else {
           console.error('[getPerfilActual] Falló la inserción del fallback de perfil:', insErr?.message);
@@ -328,7 +324,7 @@ export const getPacienteActual = async (req, res) => {
     // Fallback de autogeneración: si no existe la ficha clínica pero sí el perfil,
     // creamos o vinculamos la ficha clínica automáticamente para evitar bloquear al usuario.
     if (!data) {
-      console.log(`[getPacienteActual] Ficha clínica no encontrada para perfil ${authId}. Intentando autogenerar/vincular fallback...`);
+
       const { data: perfil, error: perfilErr } = await supabase
         .from('perfiles')
         .select('*')
@@ -345,7 +341,7 @@ export const getPacienteActual = async (req, res) => {
             .maybeSingle();
 
           if (!extErr && existente) {
-            console.log(`[getPacienteActual] Se encontró ficha clínica huérfana con DNI ${perfil.dni}. Vinculando...`);
+
             const { data: updatedPaciente, error: updErr } = await supabase
               .from('pacientes')
               .update({
@@ -361,7 +357,7 @@ export const getPacienteActual = async (req, res) => {
               .maybeSingle();
 
             if (!updErr && updatedPaciente) {
-              console.log(`[getPacienteActual] Ficha clínica vinculada con éxito.`);
+
               data = updatedPaciente;
             } else {
               console.error('[getPacienteActual] Falló la vinculación de la ficha clínica:', updErr?.message);
@@ -392,7 +388,7 @@ export const getPacienteActual = async (req, res) => {
               .maybeSingle();
 
             if (!insErr && newPaciente) {
-              console.log(`[getPacienteActual] Ficha clínica autogenerada con éxito: HC ${patientHC}`);
+
               data = newPaciente;
             } else {
               console.error('[getPacienteActual] Falló la inserción del fallback de paciente:', insErr?.message);
@@ -499,38 +495,61 @@ export const getDocumentosPaciente = async (req, res) => {
       return res.status(403).json({ success: false, error: 'No tienes permiso para ver los documentos de este paciente.' });
     }
 
+    // Query simplificada - SIN joins anidados que pueden fallar silenciosamente
     const { data, error } = await supabase
       .from('tramites_documentales')
-      .select(`
-        *,
-        pacientes (
-          nombres,
-          apellido_paterno,
-          apellido_materno
-        ),
-        servicios (
-          nombre_servicio
-        ),
-        empleados (
-          nombres,
-          apellido_paterno,
-          apellido_materno,
-          asignaciones_empleado (
-            areas (
-              nombre
-            ),
-            cargos (
-              nombre
-            )
-          )
-        )
-      `)
+      .select('*')
       .eq('paciente_id', id)
       .eq('habilitar_visualizacion', true)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return res.json({ success: true, data });
+
+    // Si no hay datos, devolver array vacío
+    if (!data || data.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    // Enriquecer cada documento con nombres de paciente, servicio y empleado por separado
+    const enrichedDocs = await Promise.all(data.map(async (doc) => {
+      const enriched = { ...doc };
+
+      // Obtener nombre del paciente
+      if (doc.paciente_id) {
+        const { data: pac } = await supabase
+          .from('pacientes')
+          .select('nombres, apellido_paterno, apellido_materno')
+          .eq('id_paciente', doc.paciente_id)
+          .maybeSingle();
+        enriched.pacientes = pac || null;
+      }
+
+      // Obtener nombre del servicio
+      if (doc.servicio_id) {
+        const { data: svc } = await supabase
+          .from('servicios')
+          .select('nombre_servicio')
+          .eq('id', doc.servicio_id)
+          .maybeSingle();
+        enriched.servicios = svc || null;
+      } else if (doc.servicio) {
+        enriched.servicios = { nombre_servicio: doc.servicio };
+      }
+
+      // Obtener nombre del empleado
+      if (doc.empleado_id) {
+        const { data: emp } = await supabase
+          .from('empleados')
+          .select('nombres, apellido_paterno, apellido_materno')
+          .eq('id', doc.empleado_id)
+          .maybeSingle();
+        enriched.empleados = emp || null;
+      }
+
+      return enriched;
+    }));
+
+    return res.json({ success: true, data: enrichedDocs });
   } catch (error) {
     console.error('Error al obtener documentos del paciente:', error.message);
     return res.status(500).json({ success: false, error: error.message });
@@ -629,21 +648,6 @@ export const registrarPacienteConsolidado = async (req, res) => {
     const finalCorreoReal = patientData?.correoReal || correoReal || correo;
 
     const isPeru = String(finalPais || '').trim().toLowerCase().startsWith('per');
-
-    console.log('[registrarPacienteConsolidado] Iniciando registro unificado:', {
-      isProxy,
-      patientDniClean,
-      proxyDniClean,
-      isPeru,
-      patientLocation: {
-        pais: finalPais,
-        departamento: finalDepartamento,
-        provincia: finalProvincia,
-        distrito: finalDistrito,
-        direccion: finalDireccion,
-        genero: finalGenero
-      }
-    });
 
     if (!patientDniClean) {
       return res.status(400).json({ success: false, error: 'El DNI del paciente es obligatorio.' });
@@ -780,7 +784,7 @@ export const registrarPacienteConsolidado = async (req, res) => {
 
             if (pacInsErr) {
               if (pacInsErr.code === '23505') {
-                console.log(`Colisión de HC de paciente independiente detectada (${patientHC}). Reintentando (${attempts}/3)...`);
+
                 continue;
               }
               throw pacInsErr;
@@ -919,7 +923,7 @@ export const registrarPacienteConsolidado = async (req, res) => {
 
             if (apoInsErr) {
               if (apoInsErr.code === '23505') {
-                console.log(`Colisión de HC del apoderado detectada (${proxyHC}). Reintentando (${proxyAttempts}/3)...`);
+
                 continue;
               }
               throw apoInsErr;
@@ -1006,7 +1010,7 @@ export const registrarPacienteConsolidado = async (req, res) => {
 
             if (pacInsErr) {
               if (pacInsErr.code === '23505') {
-                console.log(`Colisión de HC del dependiente detectada (${patientHC}). Reintentando (${patientAttempts}/3)...`);
+
                 continue;
               }
               throw pacInsErr;
@@ -1065,7 +1069,7 @@ export const registrarPacienteConsolidado = async (req, res) => {
     if (authId) {
       try {
         await supabase.auth.admin.deleteUser(authId);
-        console.log(`Rollback realizado: cuenta Auth ${authId} eliminada.`);
+
       } catch (deleteError) {
         console.error('Error durante rollback de Auth:', deleteError.message);
       }
@@ -1421,7 +1425,7 @@ export const completarIndependizacion = async (req, res) => {
     if (createdAuthId) {
       try {
         await supabase.auth.admin.deleteUser(createdAuthId);
-        console.log(`Rollback realizado: cuenta Auth ${createdAuthId} eliminada.`);
+
       } catch (deleteError) {
         console.error('Error durante rollback en completarIndependizacion:', deleteError.message);
       }

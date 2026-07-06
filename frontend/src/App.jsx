@@ -1,20 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { supabase } from './supabaseClient';
 import AuthModal from './components/AuthModal';
 import RegisterModal from './components/RegisterModal';
-import Appointments from './pages/Appointments';
-import BookAppointment from './pages/BookAppointment';
-import Family from './pages/Family';
-import PatientDocuments from './pages/PatientDocuments';
-import Profile from './pages/Profile';
-import DashboardHome from './pages/DashboardHome';
 import { PacienteProvider } from './hooks/usePacienteActual';
-import ResetPassword from './pages/ResetPassword';
-import Independizarse from './pages/Independizarse';
 
-// Backend Services & Components
+// Lazy-loaded dashboard pages (code splitting)
+const DashboardHome = lazy(() => import('./pages/DashboardHome'));
+const Appointments = lazy(() => import('./pages/Appointments'));
+const BookAppointment = lazy(() => import('./pages/BookAppointment'));
+const Family = lazy(() => import('./pages/Family'));
+const PatientDocuments = lazy(() => import('./pages/PatientDocuments'));
+const Profile = lazy(() => import('./pages/Profile'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const Independizarse = lazy(() => import('./pages/Independizarse'));
+
+// Landing page components (loaded eagerly - needed on first paint)
 import HeroCarousel from './components/HeroCarousel';
 import MissionVisionSection from './components/MissionVisionSection';
 import ServicesCarousel from './components/ServicesCarousel';
@@ -23,6 +25,16 @@ import TestimonialsCarousel from './components/TestimonialsCarousel';
 import FaqSection from './components/FaqSection';
 import Footer from './components/Footer';
 import { obtenerCarruselLanding, obtenerConfiguracionLanding, obtenerTestimoniosLanding, obtenerFaqsLanding, obtenerMisionVisionLanding } from '@backend/services/landingService.js';
+
+// Loading fallback for lazy-loaded pages
+const PageLoader = () => (
+  <div className="min-h-screen bg-[#f9f9fc] flex items-center justify-center">
+    <div className="text-center">
+      <div className="w-10 h-10 border-4 border-[#003178] border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+      <p className="text-slate-500 text-sm font-semibold">Cargando...</p>
+    </div>
+  </div>
+);
 
 const fallbackSlides = [
   {
@@ -35,7 +47,7 @@ const fallbackSlides = [
   }
 ];
 
-// Componente de la Landing Page
+// Landing Page Component
 const LandingPage = ({ onOpenAuth }) => {
   const [slides, setSlides] = useState([]);
   const [loadingSlides, setLoadingSlides] = useState(true);
@@ -47,44 +59,32 @@ const LandingPage = ({ onOpenAuth }) => {
 
   useEffect(() => {
     const fetchLandingData = async () => {
-      try {
-        const carouselData = await obtenerCarruselLanding();
-        setSlides(carouselData.length > 0 ? carouselData : fallbackSlides);
-      } catch (err) {
-        console.error('Error fetching carousel data:', err);
-        setSlides(fallbackSlides);
-      } finally {
-        setLoadingSlides(false);
-      }
+      // Parallel fetch for better performance
+      const [carouselResult, configResult, nosotrosResult, testimoniosResult, faqsResult] = await Promise.allSettled([
+        obtenerCarruselLanding(),
+        obtenerConfiguracionLanding(),
+        obtenerMisionVisionLanding(),
+        obtenerTestimoniosLanding(),
+        obtenerFaqsLanding()
+      ]);
 
-      try {
-        const [configData, nosotrosData] = await Promise.all([
-          obtenerConfiguracionLanding(),
-          obtenerMisionVisionLanding()
-        ]);
+      setSlides(
+        carouselResult.status === 'fulfilled' && carouselResult.value.length > 0
+          ? carouselResult.value
+          : fallbackSlides
+      );
+      setLoadingSlides(false);
+
+      if (configResult.status === 'fulfilled' || nosotrosResult.status === 'fulfilled') {
         setConfig({
-          ...(configData || {}),
-          ...(nosotrosData || {})
+          ...(configResult.status === 'fulfilled' ? configResult.value : {}),
+          ...(nosotrosResult.status === 'fulfilled' ? nosotrosResult.value : {})
         });
-      } catch (err) {
-        console.error('Error fetching config or nosotros data:', err);
-      } finally {
-        setLoadingConfig(false);
       }
+      setLoadingConfig(false);
 
-      try {
-        const testimoniosData = await obtenerTestimoniosLanding();
-        setTestimonios(testimoniosData || []);
-      } catch (err) {
-        console.error('Error fetching testimonials:', err);
-      }
-
-      try {
-        const faqsData = await obtenerFaqsLanding();
-        setFaqs(faqsData || []);
-      } catch (err) {
-        console.error('Error fetching FAQs:', err);
-      }
+      setTestimonios(testimoniosResult.status === 'fulfilled' ? testimoniosResult.value || [] : []);
+      setFaqs(faqsResult.status === 'fulfilled' ? faqsResult.value || [] : []);
     };
 
     fetchLandingData();
@@ -118,7 +118,6 @@ const LandingPage = ({ onOpenAuth }) => {
             <span className="text-xl sm:text-2xl font-black tracking-tighter uppercase">CEPSITCED</span>
           </a>
 
-          {/* Desktop Navigation Link Menu (visible only >= 1040px) */}
           <nav className="nav-desktop-only items-center gap-6 font-bold text-xs text-gray-550 uppercase tracking-widest">
             <a href="#inicio" className="hover:text-[#003178] transition-colors text-[#003178]">Inicio</a>
             {config?.mostrar_nosotros !== false && (
@@ -134,7 +133,6 @@ const LandingPage = ({ onOpenAuth }) => {
             <a href="#faq" className="hover:text-[#003178] transition-colors">FAQ</a>
           </nav>
 
-          {/* Desktop Portal Pacientes Button (visible only >= 1040px) */}
           <button
             onClick={onOpenAuth}
             className="nav-desktop-only px-6 py-2.5 bg-[#003178] text-white font-bold rounded-xl shadow-lg hover:bg-blue-900 transition-all text-sm uppercase tracking-wider cursor-pointer"
@@ -142,7 +140,6 @@ const LandingPage = ({ onOpenAuth }) => {
             Portal Pacientes
           </button>
 
-          {/* Mobile Hamburger Toggle Button (visible only < 1040px) */}
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
             className="nav-mobile-only p-2 text-[#003178] hover:bg-slate-100 rounded-xl transition-all cursor-pointer select-none"
@@ -155,7 +152,6 @@ const LandingPage = ({ onOpenAuth }) => {
           </button>
         </div>
 
-        {/* Mobile Drawer Backdrop Overlay (visible only < 1040px) */}
         <div
           className={`nav-mobile-only fixed inset-0 bg-black/30 z-[90] transition-opacity duration-300 ${
             isMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
@@ -163,13 +159,11 @@ const LandingPage = ({ onOpenAuth }) => {
           onClick={() => setIsMenuOpen(false)}
         />
 
-        {/* Mobile Drawer Sidebar (visible only < 1040px) */}
         <div
           className={`nav-mobile-only fixed top-0 right-0 h-screen bg-white z-[100] shadow-2xl flex flex-col p-6 gap-6 transition-transform duration-300 ease-out w-[50vw] max-[430px]:w-[85vw] max-w-[420px] ${
             isMenuOpen ? 'translate-x-0' : 'translate-x-full'
           }`}
         >
-          {/* Header of Drawer: Close Button */}
           <div className="flex items-center justify-between border-b pb-4">
             <span className="text-lg font-black text-[#003178] uppercase tracking-tighter">Menú</span>
             <button
@@ -181,65 +175,24 @@ const LandingPage = ({ onOpenAuth }) => {
             </button>
           </div>
 
-          {/* Links */}
           <div className="flex flex-col gap-4 font-bold text-sm text-[#003178] uppercase tracking-wider overflow-y-auto flex-grow">
-            <a
-              href="#inicio"
-              onClick={() => setIsMenuOpen(false)}
-              className="hover:bg-slate-50 p-2.5 rounded-xl transition-all"
-            >
-              Inicio
-            </a>
+            <a href="#inicio" onClick={() => setIsMenuOpen(false)} className="hover:bg-slate-50 p-2.5 rounded-xl transition-all">Inicio</a>
             {config?.mostrar_nosotros !== false && (
-              <a
-                href="#nosotros"
-                onClick={() => setIsMenuOpen(false)}
-                className="hover:bg-slate-50 p-2.5 rounded-xl transition-all"
-              >
-                Nosotros
-              </a>
+              <a href="#nosotros" onClick={() => setIsMenuOpen(false)} className="hover:bg-slate-50 p-2.5 rounded-xl transition-all">Nosotros</a>
             )}
-            <a
-              href="#servicios"
-              onClick={() => setIsMenuOpen(false)}
-              className="hover:bg-slate-50 p-2.5 rounded-xl transition-all"
-            >
-              Servicios
-            </a>
+            <a href="#servicios" onClick={() => setIsMenuOpen(false)} className="hover:bg-slate-50 p-2.5 rounded-xl transition-all">Servicios</a>
             {config?.mostrar_personal !== false && (
-              <a
-                href="#specialists"
-                onClick={() => setIsMenuOpen(false)}
-                className="hover:bg-slate-50 p-2.5 rounded-xl transition-all"
-              >
-                Especialistas
-              </a>
+              <a href="#specialists" onClick={() => setIsMenuOpen(false)} className="hover:bg-slate-50 p-2.5 rounded-xl transition-all">Especialistas</a>
             )}
             {testimonios.length > 0 && config?.mostrar_testimonios !== false && (
-              <a
-                href="#testimonios"
-                onClick={() => setIsMenuOpen(false)}
-                className="hover:bg-slate-50 p-2.5 rounded-xl transition-all"
-              >
-                Testimonios
-              </a>
+              <a href="#testimonios" onClick={() => setIsMenuOpen(false)} className="hover:bg-slate-50 p-2.5 rounded-xl transition-all">Testimonios</a>
             )}
-            <a
-              href="#faq"
-              onClick={() => setIsMenuOpen(false)}
-              className="hover:bg-slate-50 p-2.5 rounded-xl transition-all"
-            >
-              FAQ
-            </a>
+            <a href="#faq" onClick={() => setIsMenuOpen(false)} className="hover:bg-slate-50 p-2.5 rounded-xl transition-all">FAQ</a>
           </div>
 
-          {/* Pacientes Button */}
           <div className="border-t pt-4">
             <button
-              onClick={() => {
-                setIsMenuOpen(false);
-                onOpenAuth();
-              }}
+              onClick={() => { setIsMenuOpen(false); onOpenAuth(); }}
               className="w-full text-center bg-[#003178] text-white font-bold py-3.5 px-4 rounded-xl shadow-lg hover:bg-blue-900 transition-all text-xs sm:text-sm uppercase tracking-widest cursor-pointer whitespace-nowrap"
             >
               Portal Pacientes
@@ -249,53 +202,20 @@ const LandingPage = ({ onOpenAuth }) => {
       </header>
 
       <main className="pt-20">
-        {/* Hero Slider */}
-        <HeroCarousel
-          slides={slides}
-          loading={loadingSlides}
-          onOpenAuth={onOpenAuth}
-        />
-
-        {/* Sección Nuestro Propósito */}
-        {config?.mostrar_nosotros !== false && (
-          <MissionVisionSection
-            config={config}
-            loading={loadingConfig}
-          />
-        )}
-
-        {/* Sección de Servicios Clínicos */}
-        <ServicesCarousel
-          onOpenAuth={onOpenAuth}
-        />
-
-        {/* Sección de Especialistas */}
-        {config?.mostrar_personal !== false && (
-          <SpecialistsCarousel
-            onOpenAuth={onOpenAuth}
-          />
-        )}
-
-        {/* Sección de Testimonios */}
-        {testimonios.length > 0 && config?.mostrar_testimonios !== false && (
-          <TestimonialsCarousel testimonios={testimonios} />
-        )}
-
-        {/* Sección de Preguntas Frecuentes */}
-        {config?.mostrar_faq !== false && (
-          <FaqSection faqs={faqs} />
-        )}
+        <HeroCarousel slides={slides} loading={loadingSlides} onOpenAuth={onOpenAuth} />
+        {config?.mostrar_nosotros !== false && <MissionVisionSection config={config} loading={loadingConfig} />}
+        <ServicesCarousel onOpenAuth={onOpenAuth} />
+        {config?.mostrar_personal !== false && <SpecialistsCarousel onOpenAuth={onOpenAuth} />}
+        {testimonios.length > 0 && config?.mostrar_testimonios !== false && <TestimonialsCarousel testimonios={testimonios} />}
+        {config?.mostrar_faq !== false && <FaqSection faqs={faqs} />}
       </main>
 
-
-
-      {/* Footer */}
       <Footer config={config} />
     </div>
   );
 };
 
-// Componente principal con enrutamiento y autenticación
+// Main App with routing and auth
 const App = () => {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -311,20 +231,15 @@ const App = () => {
     } else {
       document.body.style.overflow = '';
     }
-    return () => {
-      document.body.style.overflow = '';
-    };
+    return () => { document.body.style.overflow = ''; };
   }, [isAuthOpen, isRegisterOpen]);
 
-  // Verificar sesión al cargar
   useEffect(() => {
-    // Obtener sesión inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setLoading(false);
     });
 
-    // Escuchar cambios de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
@@ -332,7 +247,6 @@ const App = () => {
     return () => subscription?.unsubscribe();
   }, []);
 
-  // Mostrar pantalla de carga mientras se verifica la sesión
   if (loading) {
     return (
       <div className="min-h-screen bg-[#f9f9fc] flex items-center justify-center">
@@ -346,77 +260,52 @@ const App = () => {
 
   const isLoggedIn = session && sessionStorage.getItem('is_registering') !== 'true';
 
-  // Si está logueado, protegemos las rutas con PacienteProvider
   if (isLoggedIn) {
     return (
       <PacienteProvider>
         <Toaster richColors position="top-right" closeButton />
-        <Routes>
-          <Route path="/dashboard" element={<DashboardHome />} />
-          <Route path="/dashboard/appointments" element={<Appointments />} />
-          <Route path="/dashboard/book-appointment" element={<BookAppointment />} />
-          <Route path="/dashboard/family" element={<Family />} />
-          <Route path="/dashboard/documents" element={<PatientDocuments />} />
-          <Route path="/dashboard/profile" element={<Profile />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/independizarse" element={<Independizarse />} />
-          {/* Redirecciones para rutas públicas y desconocidas cuando el usuario ya está autenticado */}
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/login" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/register" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/dashboard" element={<DashboardHome />} />
+            <Route path="/dashboard/appointments" element={<Appointments />} />
+            <Route path="/dashboard/book-appointment" element={<BookAppointment />} />
+            <Route path="/dashboard/family" element={<Family />} />
+            <Route path="/dashboard/documents" element={<PatientDocuments />} />
+            <Route path="/dashboard/profile" element={<Profile />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/independizarse" element={<Independizarse />} />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/login" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/register" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </Suspense>
       </PacienteProvider>
     );
   }
 
-  // Si NO está logueado, las modales se manejan en base a la URL:
-
-  const handleCloseAuth = () => {
-    navigate('/');
-  };
-
-  const handleCloseRegister = () => {
-    navigate('/');
-  };
-
-  const handleOpenRegister = () => {
-    navigate('/register');
-  };
-
-  const handleOpenAuth = () => {
-    navigate('/login');
-  };
-
-  const handleLoginSuccess = () => {
-    navigate('/dashboard');
-  };
+  const handleCloseAuth = () => navigate('/');
+  const handleCloseRegister = () => navigate('/');
+  const handleOpenRegister = () => navigate('/register');
+  const handleOpenAuth = () => navigate('/login');
+  const handleLoginSuccess = () => navigate('/dashboard');
 
   return (
     <>
       <Toaster richColors position="top-right" closeButton />
-      <AuthModal
-        isOpen={isAuthOpen}
-        onClose={handleCloseAuth}
-        onOpenRegister={handleOpenRegister}
-        onLoginSuccess={handleLoginSuccess}
-      />
-      <RegisterModal
-        isOpen={isRegisterOpen}
-        onClose={handleCloseRegister}
-      />
-      <Routes>
-        {/* Rutas públicas disponibles cuando no hay sesión */}
-        <Route path="/" element={<LandingPage onOpenAuth={handleOpenAuth} />} />
-        <Route path="/login" element={<LandingPage onOpenAuth={handleOpenAuth} />} />
-        <Route path="/register" element={<LandingPage onOpenAuth={handleOpenAuth} />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
-        <Route path="/independizarse" element={<Independizarse />} />
-        {/* Si intenta acceder al dashboard sin sesión, redirige a /login */}
-        <Route path="/dashboard/*" element={<Navigate to="/login" replace />} />
-        {/* Redirección para cualquier otra ruta desconocida */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <AuthModal isOpen={isAuthOpen} onClose={handleCloseAuth} onOpenRegister={handleOpenRegister} onLoginSuccess={handleLoginSuccess} />
+      <RegisterModal isOpen={isRegisterOpen} onClose={handleCloseRegister} />
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/" element={<LandingPage onOpenAuth={handleOpenAuth} />} />
+          <Route path="/login" element={<LandingPage onOpenAuth={handleOpenAuth} />} />
+          <Route path="/register" element={<LandingPage onOpenAuth={handleOpenAuth} />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/independizarse" element={<Independizarse />} />
+          <Route path="/dashboard/*" element={<Navigate to="/login" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </>
   );
 };

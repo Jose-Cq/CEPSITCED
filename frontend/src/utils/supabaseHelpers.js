@@ -3,15 +3,11 @@
 export {
   iniciarSesion,
   cerrarSesion,
-  obtenerUltimoNumeroHC,
-  registrarPerfil,
   obtenerPerfilActual,
-  verificarDuplicadoDNI,
   registrarPaciente,
   obtenerPacienteActual,
   actualizarPaciente,
   obtenerPacientesAsociados,
-  obtenerApoderados,
   obtenerDocumentosPaciente,
   obtenerEmpleados,
   registrarPacienteConsolidado,
@@ -23,18 +19,11 @@ export {
 export {
   obtenerCitasPaciente,
   crearCita,
-  obtenerCitasDelDia,
-  obtenerPsicologasPorServicio,
-  obtenerHorariosPsicologas,
-  obtenerCitasPsicologa,
-  obtenerHabitacionesPorLocal,
   cancelarCita
 } from '@backend/services/citasService.js';
 
 export {
-  obtenerLocalesActivos,
-  obtenerServicios,
-  obtenerPaquetes
+  obtenerLocalesActivos
 } from '@backend/services/serviciosService.js';
 
 export {

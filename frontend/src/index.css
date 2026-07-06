@@ -86,3 +86,18 @@ html, body {
   }
 }
 
+/* Prevenir que el traductor del navegador rompa los iconos de Material Symbols */
+.material-symbols-outlined,
+.material-symbols-rounded,
+.material-symbols-sharp,
+[class*="material-symbols"] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Regla global: excluir iconos de Material Symbols de la traducción */
+.notranslate,
+[class*="material-symbols"] {
+  translate: no;
+}
+

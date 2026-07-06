@@ -25,16 +25,3 @@ export const formatPhoneNumber = (val) => {
   return val;
 };
 
-/**
- * Obtiene las iniciales de un nombre y apellido compuesto.
- * @param {string} nombresApellidos - Nombres y apellidos.
- * @returns {string} - Iniciales en mayúscula.
- */
-export const getInitials = (nombresApellidos) => {
-  if (!nombresApellidos) return '';
-  const parts = nombresApellidos.split(' ').filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
-  return parts[0] ? parts[0][0].toUpperCase() : '';
-};

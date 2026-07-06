@@ -1,5 +1,4 @@
 import { supabase } from '../config/supabase.js';
-import { sendSolicitudCambioPsicologoEmail } from '../utils/mailer.js';
 
 // Auxiliar para validar que el paciente pertenece al usuario o es su dependiente
 const verificarPertenenciaPaciente = async (pacienteId, userId) => {
@@ -214,6 +213,127 @@ export const postCrearCita = async (req, res) => {
       }
     }
 
+    // --- VALIDACIÓN: Paciente activo ---
+    const { data: pacienteProfile, error: pacienteErr } = await supabase
+      .from('pacientes')
+      .select('id_paciente, activo')
+      .eq('id_paciente', citaData.paciente_id)
+      .maybeSingle();
+
+    if (pacienteErr || !pacienteProfile) {
+      return res.status(400).json({ success: false, error: 'No se encontró el perfil del paciente.' });
+    }
+    if (pacienteProfile.activo === false) {
+      return res.status(403).json({ success: false, error: 'La cuenta del paciente está inactiva. Por favor, contacta a Recepción.' });
+    }
+
+    // --- VALIDACIÓN: Psicólogo tiene disponibilidad para el horario solicitado ---
+    if (citaData.psicologo_id && citaData.fecha_cita && citaData.hora_inicio && citaData.hora_fin) {
+      const { data: horarioPsicologo, error: horarioErr } = await supabase
+        .from('horarios_empleados')
+        .select('id')
+        .eq('empleado_id', citaData.psicologo_id)
+        .eq('fecha', citaData.fecha_cita)
+        .eq('disponible', true)
+        .neq('tipo', 'salida')
+        .neq('tipo', 'otro')
+        .limit(1);
+
+      if (horarioErr) throw horarioErr;
+
+      if (!horarioPsicologo || horarioPsicologo.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'La especialista no tiene disponibilidad para la fecha y hora seleccionada.'
+        });
+      }
+
+      // Verificar que el psicólogo no tenga otra cita en ese mismo horario
+      const { data: citasPsicologo, error: citasPsicErr } = await supabase
+        .from('citas')
+        .select('id, hora_inicio, hora_fin')
+        .eq('psicologo_id', citaData.psicologo_id)
+        .eq('fecha_cita', citaData.fecha_cita)
+        .neq('estado_cita', 'Cancelado')
+        .neq('estado_cita', 'Cancelada');
+
+      if (citasPsicErr) throw citasPsicErr;
+
+      if (citasPsicologo && citasPsicologo.length > 0) {
+        const toMinutes = (timeStr) => {
+          if (!timeStr) return 0;
+          const [h, m] = timeStr.split(':').map(Number);
+          return h * 60 + m;
+        };
+        const propStart = toMinutes(citaData.hora_inicio);
+        const propEnd = toMinutes(citaData.hora_fin);
+
+        const hasSpecialistOverlap = citasPsicologo.some(c => {
+          const cStart = toMinutes(c.hora_inicio);
+          const cEnd = toMinutes(c.hora_fin);
+          return propStart < cEnd && propEnd > cStart;
+        });
+
+        if (hasSpecialistOverlap) {
+          return res.status(400).json({
+            success: false,
+            error: 'La especialista ya tiene una cita en ese horario. Por favor, selecciona otro horario.'
+          });
+        }
+      }
+    }
+
+    // --- VALIDACIÓN: Cupón (re-validar en backend si se proporciona) ---
+    if (citaData.cupon_id) {
+      const { data: coupon, error: couponErr } = await supabase
+        .from('cupones')
+        .select('*')
+        .eq('id', citaData.cupon_id)
+        .eq('activo', true)
+        .maybeSingle();
+
+      if (couponErr || !coupon) {
+        return res.status(400).json({ success: false, error: 'El cupón proporcionado es inválido o inactivo.' });
+      }
+
+      const todayStr = new Date().toLocaleDateString('sv-SE');
+      if (coupon.fecha_inicio && todayStr < coupon.fecha_inicio) {
+        return res.status(400).json({ success: false, error: 'El cupón aún no está vigente.' });
+      }
+      if (coupon.fecha_fin && todayStr > coupon.fecha_fin) {
+        return res.status(400).json({ success: false, error: 'El cupón ha caducado.' });
+      }
+      if (coupon.cantidad_usos_maximo !== null && coupon.cantidad_usos_actual >= coupon.cantidad_usos_maximo) {
+        return res.status(400).json({ success: false, error: 'El cupón ha alcanzado su límite de usos.' });
+      }
+      if (coupon.servicio_id && coupon.servicio_id !== citaData.servicio) {
+        return res.status(400).json({ success: false, error: 'El cupón no aplica para el servicio seleccionado.' });
+      }
+      if (coupon.paquete_catalogo_id && citaData.paquete_id) {
+        // Verify the package matches the coupon's package requirement
+        const { data: acquiredPack } = await supabase
+          .from('paquetes_adquiridos')
+          .select('paquete_catalogo_id')
+          .eq('id', citaData.paquete_id)
+          .maybeSingle();
+        if (acquiredPack && acquiredPack.paquete_catalogo_id !== coupon.paquete_catalogo_id) {
+          return res.status(400).json({ success: false, error: 'El cupón no aplica para el paquete seleccionado.' });
+        }
+      }
+      if (coupon.un_uso_por_paciente) {
+        const { data: usoExistente } = await supabase
+          .from('cupones_usos')
+          .select('id')
+          .eq('cupon_id', coupon.id)
+          .eq('paciente_id', citaData.paciente_id)
+          .limit(1);
+
+        if (usoExistente && usoExistente.length > 0) {
+          return res.status(400).json({ success: false, error: 'Ya has utilizado este cupón anteriormente.' });
+        }
+      }
+    }
+
     // --- LÓGICA DE CONTROL DE CAMBIO DE PSICÓLOGO CON ORDENACIÓN CRONOLÓGICA REAL ---
     // Consultar todas las citas existentes no canceladas para este paciente y servicio
     const { data: existingCitas, error: historyError } = await supabase
@@ -278,6 +398,88 @@ export const postCrearCita = async (req, res) => {
         success: false,
         error: 'Ya cuentas con una sesión pendiente para este servicio. Para agendar la siguiente sesión, debes concluir tu cita anterior.'
       });
+    }
+
+    // --- VALIDACIÓN DE PRECIO (sesiones individuales sin paquete) ---
+    if (!citaData.paquete_id && citaData.monto !== undefined && citaData.monto !== null) {
+      try {
+        // Fetch service base price
+        const { data: servicio } = await supabase
+          .from('servicios')
+          .select('id, precio_sesion, area_id, local_id')
+          .eq('nombre_servicio', citaData.servicio)
+          .eq('activo', true)
+          .maybeSingle();
+
+        if (servicio) {
+          const precioBase = Number(servicio.precio_sesion || 0);
+
+          // Fetch price rules for this service
+          const { data: reglas } = await supabase
+            .from('reglas_precios')
+            .select('*')
+            .eq('servicio_id', servicio.id);
+
+          // Fetch specialist's cargo from assignments
+          let cargoId = null;
+          if (citaData.psicologo_id) {
+            const { data: asig } = await supabase
+              .from('asignaciones_empleado')
+              .select('cargo_id, area_id, local_id')
+              .eq('empleado_id', citaData.psicologo_id)
+              .limit(1)
+              .maybeSingle();
+            if (asig) cargoId = asig.cargo_id;
+          }
+
+          // Find matching price rule
+          const todayStr = new Date().toISOString().split('T')[0];
+          const matchingRule = (reglas || []).find(r => {
+            if (r.paquete_catalogo_id) return false;
+            const matchServicio = r.servicio_id === servicio.id;
+            const matchLocal = !r.local_id || r.local_id === citaData.local_id;
+            const matchCargo = !r.cargo_id || r.cargo_id === cargoId;
+            return matchServicio && matchLocal && matchCargo;
+          });
+
+          let expectedPrice = precioBase;
+          if (matchingRule && matchingRule.precio) {
+            expectedPrice = Number(matchingRule.precio);
+            // Apply rule discount if dates valid
+            const ruleDatesOk = (!matchingRule.promo_fecha_inicio || todayStr >= matchingRule.promo_fecha_inicio) &&
+                                (!matchingRule.promo_fecha_fin || todayStr <= matchingRule.promo_fecha_fin);
+            if (matchingRule.descuento_porcentaje && ruleDatesOk) {
+              expectedPrice = expectedPrice * (1 - Number(matchingRule.descuento_porcentaje) / 100);
+            }
+          } else {
+            // No rule: check service promotion
+            const promoInicio = servicio.promo_fecha_inicio;
+            const promoFin = servicio.promo_fecha_fin;
+            const datesOk = (!promoInicio || todayStr >= promoInicio) && (!promoFin || todayStr <= promoFin);
+            if (servicio.promocion_activa && datesOk) {
+              if (servicio.promo_descuento_porcentaje) {
+                expectedPrice = precioBase * (1 - Number(servicio.promo_descuento_porcentaje) / 100);
+              } else if (servicio.precio_promocional) {
+                expectedPrice = Number(servicio.precio_promocional);
+              }
+            }
+          }
+
+          expectedPrice = Math.max(0, parseFloat(Number(expectedPrice).toFixed(2)));
+          const sentPrice = parseFloat(Number(citaData.monto).toFixed(2));
+
+          // Allow 1 cent tolerance for floating point rounding
+          if (Math.abs(expectedPrice - sentPrice) > 0.01) {
+            return res.status(400).json({
+              success: false,
+              error: `El precio enviado (S/ ${sentPrice}) no coincide con el precio calculado por el sistema (S/ ${expectedPrice}). Por favor, recarga la página e intenta de nuevo.`
+            });
+          }
+        }
+      } catch (priceErr) {
+        console.error('Error al validar precio en backend:', priceErr.message);
+        // Don't block appointment creation on validation error, just log it
+      }
     }
 
     // Resolve or register the package purchase if catalog package is sent
@@ -552,7 +754,7 @@ export const postCrearCita = async (req, res) => {
                   if (bulkInsertErr) {
                     console.error("Error en traspaso de trámites (insert):", bulkInsertErr);
                   } else {
-                    console.log("Trámites de paquete registrados con éxito:", insertTramites);
+
                   }
                 }
 

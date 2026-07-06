@@ -19,7 +19,4 @@ if (!supabaseUrl || !supabaseAnonKey) {
   )
 }
 
-console.log('--- Supabase Connection Status ---')
-console.log('URL Supabase configurada correctamente a través de variables de entorno.')
-
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)

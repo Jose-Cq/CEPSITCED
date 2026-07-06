@@ -105,11 +105,3 @@ export const enviarCorreoIndependizacion = async (toEmail, nombresPaciente, link
     return { success: false, error: error.message };
   }
 };
-
-/**
- * Función marcador/placeholder para recordatorios de correos existentes.
- */
-export const enviarRecordatorioCita = async (toEmail, datosCita) => {
-  console.log(`[Recordatorio] Correo de recordatorio enviado a ${toEmail} para la cita ${datosCita}`);
-  return { success: true };
-};

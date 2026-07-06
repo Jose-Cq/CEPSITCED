@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { hasValidImage } from '@backend/utils/formatters.js';
 
 const HeroCarousel = ({ slides = [], loading = false, onOpenAuth }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (slides.length <= 1) return;

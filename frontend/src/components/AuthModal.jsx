@@ -157,7 +157,6 @@ const AuthModal = ({ isOpen, onClose, onOpenRegister, onLoginSuccess }) => {
       const resultado = await iniciarSesion(dni, password);
 
       if (resultado.success) {
-        console.log('Inicio de sesión exitoso');
         if (onLoginSuccess) {
           onLoginSuccess(resultado.data);
         }
